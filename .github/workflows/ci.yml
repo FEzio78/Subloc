@@ -1,0 +1,25 @@
+name: checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Install
+        run: uv sync --python 3.12
+      - name: Lint
+        run: uv run ruff check . ; uv run ruff format --check .
+      - name: Types
+        run: uv run mypy subloc
+      - name: Tests
+        run: uv run pytest -q
+        env:
+          QT_QPA_PLATFORM: offscreen

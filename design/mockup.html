@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Subloc design mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Arabic:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d0e10;
+    --surface: #15171a;
+    --surface-2: #1c1f23;
+    --surface-3: #24282d;
+    --line: #2b2f35;
+    --text: #eceef0;
+    --muted: #8a9098;
+    --faint: #5b6169;
+    --accent: #f5c542;       /* subtitle yellow */
+    --accent-dim: #f5c54233;
+    --accent-ink: #1b1500;
+    --ok: #5cc489;
+    --err: #e5616a;
+    --sans: "IBM Plex Sans", "IBM Plex Sans Arabic", system-ui, sans-serif;
+    --arabic: "IBM Plex Sans Arabic", "IBM Plex Sans", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, monospace;
+    --r: 10px;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: #060708; color: var(--text); font: 14px/1.45 var(--sans); padding: 40px 16px 80px; }
+  h2.label { max-width: 1280px; margin: 0 auto 12px; font: 500 12px var(--mono); color: var(--muted); letter-spacing: .08em; text-transform: uppercase; }
+  .window { max-width: 1280px; height: 760px; margin: 0 auto 56px; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 30px 80px #000a; }
+
+  /* ---------- top bar */
+  .bar { height: 52px; display: flex; align-items: center; gap: 28px; padding: 0 20px; border-bottom: 1px solid var(--line); background: var(--surface); }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; letter-spacing: -.01em; }
+  .mark { width: 26px; height: 18px; border-radius: 4px; background: var(--surface-3); position: relative; }
+  .mark::before, .mark::after { content: ""; position: absolute; left: 5px; height: 2.5px; border-radius: 2px; background: var(--accent); }
+  .mark::before { bottom: 7px; width: 16px; } .mark::after { bottom: 3px; width: 10px; left: 8px; }
+  nav { display: flex; gap: 4px; }
+  nav a { color: var(--muted); text-decoration: none; padding: 6px 12px; border-radius: 7px; font-weight: 500; }
+  nav a.on { color: var(--text); background: var(--surface-3); }
+  nav .count { font: 500 11px var(--mono); background: var(--accent); color: var(--accent-ink); border-radius: 99px; padding: 1px 6px; margin-left: 6px; }
+  .bar .spacer { flex: 1; }
+  .engine { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12.5px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px #5cc48922; }
+
+  /* ---------- home */
+  .home { flex: 1; display: grid; place-items: center; padding: 28px; }
+  .stack { width: 100%; max-width: 900px; display: flex; flex-direction: column; gap: 18px; }
+  .frame { aspect-ratio: 16 / 8; border-radius: 14px; position: relative; overflow: hidden;
+    background: radial-gradient(120% 90% at 50% 10%, #1d2126 0%, #111316 55%, #0b0c0e 100%);
+    border: 1.5px dashed #3a3f46; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; padding-bottom: 54px; }
+  .frame::before, .frame::after { content: ""; position: absolute; left: 0; right: 0; height: 9%; background: #07080a; }
+  .frame::before { top: 0; } .frame::after { bottom: 0; }
+  .frame .icon { position: absolute; top: 36%; left: 50%; transform: translate(-50%, -50%); width: 64px; height: 64px; border-radius: 16px; border: 1.5px solid #3a3f46; display: grid; place-items: center; color: var(--muted); }
+  .sub { font-weight: 600; font-size: 26px; color: var(--accent); text-shadow: 0 2px 0 #000, 0 0 18px #000; z-index: 1; letter-spacing: -.01em; }
+  .sub2 { color: #c9ccd0; font-size: 14px; margin-top: 6px; z-index: 1; text-shadow: 0 1px 0 #000; }
+  .formats { position: absolute; top: calc(9% + 14px); right: 18px; font: 11px var(--mono); color: var(--faint); }
+
+  .route { display: flex; align-items: stretch; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .field { flex: 1; padding: 12px 16px; border-right: 1px solid var(--line); min-width: 0; }
+  .field:last-child { border-right: 0; }
+  .field small { display: block; color: var(--muted); font-size: 11.5px; margin-bottom: 3px; }
+  .field b { font-weight: 500; display: flex; align-items: center; justify-content: space-between; gap: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .field b i { font-style: normal; color: var(--faint); font-size: 11px; }
+  .arrow { display: grid; place-items: center; padding: 0 4px; color: var(--accent); border-right: 1px solid var(--line); font-size: 18px; }
+  .field.wide { flex: 1.6; }
+  .tag { font: 500 10.5px var(--mono); color: var(--muted); border: 1px solid var(--line); border-radius: 5px; padding: 0 5px; }
+
+  .trust { display: flex; justify-content: center; gap: 22px; color: var(--muted); font-size: 12.5px; }
+  .trust span { display: flex; align-items: center; gap: 7px; }
+  .trust svg { color: var(--ok); }
+
+  /* ---------- working / review */
+  .work { flex: 1; display: grid; grid-template-columns: 1.35fr 1fr; min-height: 0; }
+  .left { padding: 20px; display: flex; flex-direction: column; gap: 14px; border-right: 1px solid var(--line); min-width: 0; }
+  .title { display: flex; align-items: baseline; gap: 12px; }
+  .title h1 { font-size: 17px; font-weight: 600; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .title .meta { color: var(--muted); font: 12px var(--mono); white-space: nowrap; }
+  .player { flex: 1 1 0; min-height: 160px; border-radius: 10px; position: relative; overflow: hidden;
+    background: linear-gradient(160deg, #2a3138 0%, #1a1e23 40%, #0f1114 100%); }
+  .player .scene { position: absolute; inset: 0; background:
+      radial-gradient(40% 55% at 30% 45%, #3c4a55 0%, transparent 70%),
+      radial-gradient(35% 50% at 72% 55%, #4a3f36 0%, transparent 70%); opacity: .9; }
+  .player .cap { position: absolute; left: 0; right: 0; bottom: 7%; text-align: center; font: 600 22px/1.35 var(--arabic); color: #fff; text-shadow: 0 0 2px #000, 0 2px 3px #000, 0 0 12px #000c; direction: rtl; }
+  .player .hud { position: absolute; left: 12px; top: 10px; font: 11px var(--mono); color: #fffc; background: #0008; padding: 3px 7px; border-radius: 6px; }
+
+  .stages { display: flex; gap: 8px; }
+  .stage { flex: 1; background: var(--surface); border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; }
+  .stage small { color: var(--muted); font-size: 11px; display: flex; justify-content: space-between; }
+  .stage b { font-weight: 500; font-size: 13px; }
+  .stage.done small::after { content: "✓"; color: var(--ok); }
+  .stage.now { border-color: #f5c54266; background: linear-gradient(180deg, #f5c54212, transparent); }
+  .stage.now b { color: var(--accent); }
+
+  .timeline { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px 10px; }
+  .tl-head { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; margin-bottom: 9px; }
+  .tl-head b { color: var(--text); font-weight: 500; }
+  .track { position: relative; height: 10px; border-radius: 3px; background: var(--surface-3); margin-bottom: 6px; overflow: hidden; }
+  .track.heard { height: 18px; background: repeating-linear-gradient(90deg, #3a4048 0 2px, transparent 2px 4px); opacity: .9; }
+  .seg { position: absolute; top: 0; bottom: 0; border-radius: 2px; }
+  .heard .seg { background: #6f7884; }
+  .translated .seg { background: var(--accent); }
+  .playhead { position: absolute; top: -3px; bottom: -3px; width: 2px; background: #fff; border-radius: 1px; box-shadow: 0 0 0 3px #0006; }
+  .tl-scale { display: flex; justify-content: space-between; font: 10.5px var(--mono); color: var(--faint); }
+  .legend { display: flex; gap: 14px; font-size: 11.5px; color: var(--muted); margin-top: 6px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+
+  .actions { display: flex; gap: 8px; margin-top: auto; }
+  .btn { border: 1px solid var(--line); background: var(--surface-2); color: var(--text); font: 500 13px var(--sans); padding: 9px 14px; border-radius: 8px; display: inline-flex; align-items: center; gap: 8px; }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+  .btn.ghost { background: transparent; }
+  .actions .spacer { flex: 1; }
+  .eta { color: var(--muted); font-size: 12.5px; align-self: center; }
+
+  .right { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+  .r-head { display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+  .r-head h3 { font-size: 13px; font-weight: 600; }
+  .r-head .muted { color: var(--muted); font-size: 12px; }
+  .r-head .spacer { flex: 1; }
+  .seg-ctl { display: flex; background: var(--surface-2); border: 1px solid var(--line); border-radius: 7px; padding: 2px; }
+  .seg-ctl span { font-size: 12px; padding: 3px 9px; border-radius: 5px; color: var(--muted); }
+  .seg-ctl span.on { background: var(--surface-3); color: var(--text); }
+  .lines { flex: 1; overflow: hidden; }
+  .row { display: grid; grid-template-columns: 58px 1fr; gap: 10px; padding: 10px 18px; border-bottom: 1px solid #1f2226; }
+  .row time { font: 11.5px/1.9 var(--mono); color: var(--faint); }
+  .row .src { color: var(--muted); font-size: 13px; }
+  .row .tr { font: 15px/1.5 var(--arabic); direction: rtl; text-align: right; margin-top: 3px; }
+  .row .tr.pending { color: var(--faint); font: italic 12.5px var(--sans); direction: ltr; text-align: left; }
+  .row.now { background: linear-gradient(90deg, var(--accent-dim), transparent 70%); box-shadow: inset 2px 0 0 var(--accent); }
+  .row.now time { color: var(--accent); }
+  .row.song .tr { font-style: italic; color: #d9cfa8; }
+
+  /* review */
+  .row.edit { background: var(--surface-2); box-shadow: inset 2px 0 0 var(--accent); }
+  .editbox { margin-top: 6px; border: 1px solid #f5c54288; border-radius: 7px; background: var(--bg); padding: 8px 10px; font: 15px/1.5 var(--arabic); direction: rtl; text-align: right; }
+  .row-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .chip { white-space: nowrap; font-size: 11.5px; border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; color: var(--muted); background: var(--surface); }
+  .chip.y { color: var(--accent); border-color: #f5c54255; }
+  .names { border-top: 1px solid var(--line); padding: 12px 18px 14px; background: var(--surface); }
+  .names h4 { font-size: 12px; font-weight: 600; margin-bottom: 8px; display: flex; justify-content: space-between; }
+  .names h4 span { color: var(--muted); font-weight: 400; }
+  .pairs { display: flex; flex-wrap: wrap; gap: 6px; }
+  .pair { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 7px; padding: 4px 8px; font-size: 12.5px; background: var(--surface-2); }
+  .pair .ar { font-family: var(--arabic); }
+  .pair .to { color: var(--faint); }
+  .pair.user { border-color: #f5c54255; }
+</style>
+</head>
+<body>
+
+<!-- ================================================================ 1. HOME -->
+<h2 class="label">1 · Home — drop a video</h2>
+<div class="window">
+  <div class="bar">
+    <div class="brand"><span class="mark"></span>Subloc</div>
+    <nav><a class="on">New</a><a>Queue<span class="count">3</span></a><a>Settings</a></nav>
+    <div class="spacer"></div>
+    <div class="engine"><span class="dot"></span>Translator ready · Gemma 4 26B</div>
+  </div>
+  <div class="home">
+    <div class="stack">
+      <div class="frame">
+        <div class="formats">MP4 · MKV · AVI · MOV · WEBM</div>
+        <div class="icon">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4"/><path d="m7 9 5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
+        </div>
+        <div class="sub">Drop a video here</div>
+        <div class="sub2">or click to choose a file — a whole folder works too</div>
+      </div>
+
+      <div class="route">
+        <div class="field"><small>Spoken language</small><b>Detect automatically <i>▾</i></b></div>
+        <div class="arrow">→</div>
+        <div class="field"><small>Subtitles in</small><b>العربية · Arabic <i>▾</i></b></div>
+        <div class="field"><small>Quality</small><b>Best <span class="tag">large-v3</span> <i>▾</i></b></div>
+        <div class="field wide"><small>Translator</small><b>Gemma 4 26B · loaded in LM Studio <i>▾</i></b></div>
+      </div>
+
+      <div class="trust">
+        <span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>Runs on this PC — nothing is uploaded</span>
+        <span>Subtitles are saved next to your video</span>
+        <span>Stop anytime — it picks up where it left off</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================================================================ 2. WORKING -->
+<h2 class="label">2 · Working — progress drawn on the video's own timeline</h2>
+<div class="window">
+  <div class="bar">
+    <div class="brand"><span class="mark"></span>Subloc</div>
+    <nav><a class="on">New</a><a>Queue<span class="count">3</span></a><a>Settings</a></nav>
+    <div class="spacer"></div>
+    <div class="engine"><span class="dot"></span>Translator ready · Gemma 4 26B</div>
+  </div>
+  <div class="work">
+    <div class="left">
+      <div class="title"><h1>The Long Road — Episode 3.mkv</h1><span class="meta">47:12 · Korean → Arabic</span></div>
+      <div class="player"><div class="scene"></div><span class="hud">12:41</span><div class="cap">‏لم أقل إنني سأرحل الليلة.‏</div></div>
+
+      <div class="stages">
+        <div class="stage done"><small>1 · Audio</small><b>Read</b></div>
+        <div class="stage done"><small>2 · Listening</small><b>612 lines</b></div>
+        <div class="stage done"><small>3 · Names</small><b>14 found</b></div>
+        <div class="stage now"><small>4 · Translating</small><b>62%</b></div>
+      </div>
+
+      <div class="timeline">
+        <div class="tl-head"><span>Progress across the video</span><b>about 3 min left</b></div>
+        <div class="track heard">
+          <div class="seg" style="left:2%;width:9%"></div><div class="seg" style="left:12%;width:14%"></div>
+          <div class="seg" style="left:28%;width:6%"></div><div class="seg" style="left:36%;width:17%"></div>
+          <div class="seg" style="left:55%;width:12%"></div><div class="seg" style="left:69%;width:8%"></div>
+          <div class="seg" style="left:79%;width:15%"></div><div class="seg" style="left:95%;width:3%"></div>
+        </div>
+        <div class="track translated">
+          <div class="seg" style="left:2%;width:9%"></div><div class="seg" style="left:12%;width:14%"></div>
+          <div class="seg" style="left:28%;width:6%"></div><div class="seg" style="left:36%;width:17%"></div>
+          <div class="seg" style="left:55%;width:7%"></div>
+          <div class="playhead" style="left:27%"></div>
+        </div>
+        <div class="tl-scale"><span>0:00</span><span>10:00</span><span>20:00</span><span>30:00</span><span>40:00</span><span>47:12</span></div>
+        <div class="legend"><span><i style="background:#6f7884"></i>Speech found</span><span><i style="background:var(--accent)"></i>Translated</span><span><i style="background:#fff"></i>Preview position</span></div>
+      </div>
+
+      <div class="actions">
+        <button class="btn">▶ Watch while it works</button>
+        <span class="spacer"></span>
+        <span class="eta">You can close this window — progress is saved</span>
+        <button class="btn ghost">Pause</button>
+      </div>
+    </div>
+
+    <div class="right">
+      <div class="r-head"><h3>Lines</h3><span class="muted">612</span><span class="spacer"></span>
+        <div class="seg-ctl"><span class="on">Both</span><span>Original</span><span>Arabic</span></div></div>
+      <div class="lines">
+        <div class="row"><time>12:31</time><div><div class="src">어디 가는 거야, 이 시간에?</div><div class="tr">‏إلى أين تذهب في هذا الوقت؟‏</div></div></div>
+        <div class="row"><time>12:34</time><div><div class="src">잠깐 바람 좀 쐬려고.</div><div class="tr">‏أردت فقط أن أستنشق بعض الهواء.‏</div></div></div>
+        <div class="row"><time>12:37</time><div><div class="src">가방은 왜 싸 놨는데?</div><div class="tr">‏ولماذا حزمت حقيبتك إذًا؟‏</div></div></div>
+        <div class="row now"><time>12:41</time><div><div class="src">오늘 밤에 떠난다고 한 적 없어.</div><div class="tr">‏لم أقل إنني سأرحل الليلة.‏</div></div></div>
+        <div class="row"><time>12:45</time><div><div class="src">그럼 내일은?</div><div class="tr">‏وماذا عن الغد؟‏</div></div></div>
+        <div class="row"><time>12:47</time><div><div class="src">…모르겠어.</div><div class="tr pending">Translating…</div></div></div>
+        <div class="row"><time>12:52</time><div><div class="src">지훈아, 나 좀 봐.</div><div class="tr pending">Waiting</div></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================================================================ 3. REVIEW -->
+<h2 class="label">3 · Done — review, fix a line, keep names consistent</h2>
+<div class="window">
+  <div class="bar">
+    <div class="brand"><span class="mark"></span>Subloc</div>
+    <nav><a class="on">New</a><a>Queue<span class="count">2</span></a><a>Settings</a></nav>
+    <div class="spacer"></div>
+    <div class="engine"><span class="dot"></span>Translator ready · Gemma 4 26B</div>
+  </div>
+  <div class="work">
+    <div class="left">
+      <div class="title"><h1>The Long Road — Episode 3.mkv</h1><span class="meta">Done in 6 min · 612 lines</span></div>
+      <div class="player"><div class="scene"></div><span class="hud">18:05</span><div class="cap">‏جيهون، انظر إليّ.‏</div></div>
+
+      <div class="timeline">
+        <div class="tl-head"><span>Translated</span><b>612 / 612</b></div>
+        <div class="track translated">
+          <div class="seg" style="left:2%;width:9%"></div><div class="seg" style="left:12%;width:14%"></div>
+          <div class="seg" style="left:28%;width:6%"></div><div class="seg" style="left:36%;width:17%"></div>
+          <div class="seg" style="left:55%;width:12%"></div><div class="seg" style="left:69%;width:8%"></div>
+          <div class="seg" style="left:79%;width:15%"></div><div class="seg" style="left:95%;width:3%"></div>
+          <div class="playhead" style="left:38%"></div>
+        </div>
+        <div class="tl-scale"><span>0:00</span><span>10:00</span><span>20:00</span><span>30:00</span><span>40:00</span><span>47:12</span></div>
+      </div>
+
+      <div class="actions">
+        <button class="btn primary">▶ Play with subtitles</button>
+        <button class="btn">Export ▾</button>
+        <span class="spacer"></span>
+        <button class="btn ghost">Show files</button>
+      </div>
+    </div>
+
+    <div class="right">
+      <div class="r-head"><h3>Lines</h3><span class="muted">click a line to fix it</span><span class="spacer"></span>
+        <div class="seg-ctl"><span class="on">Both</span><span>Original</span><span>Arabic</span></div></div>
+      <div class="lines">
+        <div class="row"><time>18:01</time><div><div class="src">…모르겠어.</div><div class="tr">‏…لا أعرف.‏</div></div></div>
+        <div class="row edit"><time>18:05</time><div><div class="src">지훈아, 나 좀 봐.</div>
+          <div class="editbox">‏جيهون، انظر إليّ.‏</div>
+          <div class="row-actions"><span class="chip y">Save</span><span class="chip">Translate again</span><span class="chip">Play from here</span><span class="chip">Original text</span></div></div></div>
+        <div class="row"><time>18:09</time><div><div class="src">네가 떠나면 엄마는 어떡해?</div><div class="tr">‏وماذا ستفعل أمي إن رحلت؟‏</div></div></div>
+        <div class="row song"><time>18:20</time><div><div class="src">♪ 끝나지 않을 밤 ♪</div><div class="tr">‏♪ ليلةٌ لا تنتهي ♪‏</div></div></div>
+      </div>
+      <div class="names">
+        <h4>Names in this series <span>used for every episode in the folder</span></h4>
+        <div class="pairs">
+          <span class="pair user">지훈 <span class="to">→</span> <span class="ar">جيهون</span></span>
+          <span class="pair">서연 <span class="to">→</span> <span class="ar">سويون</span></span>
+          <span class="pair">부산 <span class="to">→</span> <span class="ar">بوسان</span></span>
+          <span class="pair">한강 <span class="to">→</span> <span class="ar">نهر هان</span></span>
+          <span class="pair">+ 10 more</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,78 @@
+[project]
+name = "subloc"
+version = "0.1.0"
+description = "Subtitles for any video, made on your own PC: transcribe, translate, style, burn in."
+readme = "README.md"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
+authors = [{ name = "FEzio78" }]
+keywords = ["subtitles", "whisper", "translation", "arabic", "llm", "offline"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Win32 (MS Windows)",
+    "Intended Audience :: End Users/Desktop",
+    "Natural Language :: Arabic",
+    "Natural Language :: English",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Video",
+]
+
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "faster-whisper>=1.1",
+    # CUDA runtime libs for faster-whisper, installed inside the venv (no system CUDA needed)
+    "nvidia-cublas-cu12",
+    "nvidia-cudnn-cu12>=9,<10",
+    "httpx>=0.27",
+    "numpy",
+    "pillow",
+    "pyside6-essentials>=6.8",
+    "mpv>=1.0",
+    "nvidia-cuda-runtime-cu12>=12.9.79",
+]
+
+[project.urls]
+Homepage = "https://github.com/FEzio78/Subloc"
+Issues = "https://github.com/FEzio78/Subloc/issues"
+
+[project.scripts]
+subloc = "subloc.cli:main"
+
+[project.gui-scripts]
+subloc-gui = "subloc.ui.app:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+cache-dir = ".tools/uv-cache"
+python-preference = "only-managed"
+
+[dependency-groups]
+dev = [
+    "mypy>=2.4.0",
+    "pytest>=9.1.1",
+    "ruff>=0.17.1",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+# pyflakes, pycodestyle, bugbear, import order, pyupgrade, simplify, ruff-specific
+select = ["F", "E", "W", "B", "I", "UP", "SIM", "RUF"]
+ignore = [
+    "RUF001", "RUF002", "RUF003",  # non-ASCII punctuation is intentional (Arabic / CJK text, “quotes”, —)
+    "SIM108",                       # ternaries aren't always clearer
+]
+
+[tool.ruff.lint.per-file-ignores]
+"subloc/ui/i18n.py" = ["E501"]  # translation table: one entry per line
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+check_untyped_defs = true

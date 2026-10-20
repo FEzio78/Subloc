@@ -1,0 +1,40 @@
+# Private test media — never commit or upload anything from here
+vids/
+
+# Generated next to videos
+*.srt
+*.ass
+*.subloc.json
+*.subloc.json.tmp
+
+# Local environment, caches, downloaded models
+.venv/
+.tools/
+models/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Any media file, anywhere in the project
+*.mp4
+*.mkv
+*.avi
+*.mov
+*.webm
+*.m4v
+*.ts
+*.flv
+*.wmv
+*.mp3
+*.wav
+*.m4a
+*.opus
+*.aac
+
+# Third-party binaries (bundled by the installer, not committed)
+vendor/
+
+# App data while developing (installed app keeps it in %LOCALAPPDATA%/Subloc)
+logs/
+config.json
+*.part
