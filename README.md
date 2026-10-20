@@ -1,15 +1,50 @@
 <p align="center">
-  <img src="docs/screenshots/home.png" width="860" alt="Subloc — drop a video">
+  <img src="docs/screenshots/home-ar.png" width="860" alt="Subloc">
 </p>
 
-# Subloc
+<div dir="rtl">
+
+# Subloc — ترجمة لأي مقطع فيديو على جهازك
+
+**ترجمة لأي فيلم أو مسلسل أو أنمي، تُصنع على جهازك أنت.** أفلت المقطع في البرنامج، فيستمع إلى الكلام ويكتبه
+ثم يترجمه إلى العربية بذكاء اصطناعي يعمل محليًا. لا يُرفع أي شيء، ولا حساب ولا اشتراك.
+
+صُمّم أولًا للمشاهد العربي ليشاهد مسلسلاته وأفلامه والأنمي المفضلة لديه بأي لغة كانت، وبطريقة سهلة لأي شخص.
+
+### ماذا يفعل؟
+
+- **يستمع ويكتب:** يحوّل الكلام إلى نص بتوقيت دقيق باستخدام Whisper على بطاقة الرسوميات.
+- **يترجم بفهم للسياق:** يترجم المشهد كاملًا لا السطر وحده، ويوحّد كتابة الأسماء في كل الحلقات، ولا يمسّ التوقيت أبدًا.
+- **يستفيد من الترجمة الموجودة:** إن كان في الملف ترجمة (إنجليزية مثلًا) يترجمها مباشرة، فيكون أسرع وبتوقيت احترافي.
+- **يتعامل مع الملفات الحقيقية:** عدة مسارات صوتية، مقاطع بلغات مختلطة، ملفات تالفة، ومجلدات مواسم كاملة.
+- **تستطيع التصحيح:** انقر أي سطر لتعديله أو إعادة ترجمته، وغيّر اسم شخصية مرة واحدة فيتغيّر في كل مكان.
+- **بالشكل الذي تريده:** أنماط للترجمة مع معاينة دقيقة، ومشغّل داخل البرنامج، وتصدير فيديو بترجمة مدمجة للهاتف والتلفاز.
+- **بواجهة عربية كاملة** من اليمين إلى اليسار، أو بالإنجليزية.
+
+### الخصوصية
+
+كل شيء يعمل على جهازك. لا تُرسل مقاطعك ولا أصواتها ولا ترجماتها إلى أي مكان. الاتصال الوحيد بالإنترنت هو تنزيل
+النماذج أثناء الإعداد.
+
+### الحالة
+
+نسخة تجريبية لنظام ويندوز. يعمل حاليًا من الشيفرة المصدرية، والمثبّت بنقرة واحدة قادم قريبًا. طريقة التشغيل والتفاصيل
+التقنية في القسم الإنجليزي أدناه.
+
+**الرخصة:** مفتوح المصدر بموجب GPL-3.0.
+
+</div>
+
+---
+
+# Subloc (English)
 
 **Subtitles for any video, made on your own PC.** Drop in a movie, a series episode or an anime, and get
 subtitles in your language — translated by AI running locally. Nothing is uploaded, no account, no
 subscription.
 
-Built first for **Arabic** viewers of Korean, Japanese, Chinese, Russian, Turkish, Filipino and English
-content, and designed so anyone can use it.
+Built first for **Arabic** viewers to watch their favorite shows, movies and anime in whatever language
+they were made in — and designed so anyone can use it.
 
 > **Status:** beta, Windows. Runs from source today; a one-click installer is next.
 
