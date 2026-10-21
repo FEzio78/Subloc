@@ -20,6 +20,8 @@
 - **تستطيع التصحيح:** انقر أي سطر لتعديله أو إعادة ترجمته، وغيّر اسم شخصية مرة واحدة فيتغيّر في كل مكان.
 - **بالشكل الذي تريده:** أنماط للترجمة مع معاينة دقيقة، ومشغّل داخل البرنامج، وتصدير فيديو بترجمة مدمجة للهاتف والتلفاز.
 - **بواجهة عربية كاملة** من اليمين إلى اليسار، أو بالإنجليزية.
+- **من سطر الأوامر أو عبر وكيل ذكاء اصطناعي:** كل ما يفعله البرنامج متاح بالأوامر، وكخادم MCP يستطيع وكيل مثل Claude
+  أن يجد المقاطع التي تنقصها ترجمة ويترجمها ويصحّحها لك، وكل ذلك على جهازك.
 
 ### الخصوصية
 
@@ -113,15 +115,21 @@ cd Subloc
 .\Subloc.bat                               # first launch opens Setup
 ```
 
-Command line:
+## Command line and AI agents
+
+Everything the app does also works without the window, with the app's settings
+([docs/cli.md](docs/cli.md)):
 
 ```powershell
-.venv\Scripts\python -m subloc.cli "movie.mkv" --to ar
-.venv\Scripts\python -m subloc.cli "D:\Shows\Season 1"     # a whole folder
-.venv\Scripts\python -m subloc.cli "movie.mkv" --subs 1    # translate built-in subtitle track 1
-.venv\Scripts\python -m subloc.cli "clip.mp4" --from mixed # language changes during the video
-.venv\Scripts\python -m subloc.cli --help
+.venv\Scripts\python -m subloc translate "D:\Shows\Season 1"   # a whole folder, subfolders too
+.venv\Scripts\python -m subloc translate "movie.mkv" --to en
+.venv\Scripts\python -m subloc folder "D:\Shows" --missing     # what still needs subtitles
+.venv\Scripts\python -m subloc lines "movie.mkv"               # read, then: edit / retranslate / burn
+.venv\Scripts\python -m subloc --help                          # every command takes --json
 ```
+
+`subloc mcp` runs Subloc as an MCP server, so an AI agent (Claude Desktop, Claude Code…) can find videos
+without subtitles, make them, and fix lines for you, all still on your PC ([docs/agents.md](docs/agents.md)).
 
 ## Output
 

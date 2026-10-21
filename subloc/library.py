@@ -15,7 +15,7 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
-from .batch import VIDEO_EXT, skip_dir
+from .batch import VIDEO_EXT, natural, skip_dir
 from .config import data_dir
 from .langs import LANGS
 from .media import ISO3
@@ -29,6 +29,11 @@ LANG_WORDS = {name.lower(): code for code, name in LANGS.items()}  # "arabic" â†
 
 class Stopped(Exception):
     pass
+
+
+def natural_path(path: str) -> list:
+    """Sort key: Season 2/Ep 10 after Season 1/Ep 9."""
+    return [natural(part) for part in Path(path).parts]
 
 
 def lang_code(tag: str) -> str | None:

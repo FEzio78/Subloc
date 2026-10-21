@@ -40,6 +40,8 @@ config.json
 recent.json
 library.json
 queue.json
+busy.lock
+busy.json
 # Home-screen thumbnails: frames of the user's videos
 thumbs/
 *.part

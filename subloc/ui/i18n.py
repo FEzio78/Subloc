@@ -104,6 +104,12 @@ AR: dict[str, str] = {
     "Sleep now": "السكون الآن",
     "Shut down now": "إيقاف التشغيل الآن",
     "Subtitles ready": "الترجمة جاهزة",
+    # ---- busy (the command line or an agent is using the graphics card)
+    "the queue": "قائمة الانتظار",
+    "Subloc is busy": "Subloc مشغول",
+    "Another Subloc is working: {who}. Try again when it's done.":
+        "نسخة أخرى من Subloc تعمل الآن: {who}. أعد المحاولة بعد انتهائها.",
+    "the command line": "سطر الأوامر",
     # ---- library
     "Library": "المكتبة",
     "Search": "بحث",

@@ -10,7 +10,8 @@ Public repo: https://github.com/FEzio78/Subloc (GPL-3.0-or-later). Design + hist
 . .\env.ps1 -Setup                          # env inside the folder (.tools/, .venv/)
 .venv\Scripts\python tools\fetch_vendor.py  # llama.cpp + libmpv into vendor/ (git-ignored)
 .\Subloc.bat                                # app (first launch opens Setup)
-.venv\Scripts\python -m subloc.cli VIDEO --to ar
+.venv\Scripts\python -m subloc translate VIDEO_OR_FOLDER --to ar   # CLI: docs/cli.md (every command takes --json)
+.venv\Scripts\python -m subloc mcp                                # MCP server for agents: docs/agents.md
 .venv\Scripts\python -m pytest ; .venv\Scripts\python -m ruff check . ; .venv\Scripts\python -m ruff format . ; .venv\Scripts\python -m mypy subloc
 .venv\Scripts\python tools\make_screenshots.py   # README images from a synthetic demo
 ```
@@ -24,11 +25,14 @@ All four checks must pass before committing.
   count + id enum, `src` anchoring, retries, parallel) · `llm` (OpenAI-compatible client) · `engine`
   (built-in llama-server) · `pipeline` (one video, caching) · `batch` · `style`/`burn`/`subtitles` (outputs) ·
   `catalog`/`hardware`/`download`/`config` (setup) · `recent` (Home list) · `library` (folder index, scans) ·
-  `proc` (every process starts here, hidden: no console windows; test enforces) · `power` · `cli`.
+  `proc` (every process starts here, hidden: no console windows; test enforces) · `power` ·
+  `service` (no-window layer: app settings, jobs, JSON reports; used by `cli` and `mcp_server`) · `busy`
+  (one GPU job at a time across window, CLI and agents: OS file lock) · `cli` · `mcp_server` (MCP over stdio,
+  protocol hand-written, no extra packages).
 - UI (`subloc/ui`): `app` (main window/controller) · `pages` (Home, Job, Queue, Settings) · `library_page` ·
   `widgets` · `lines` · `player` (libmpv) · `style_dialog` · `setup` (wizard) · `i18n` (Arabic table) · `theme`.
-- App data while developing (git-ignored): `config.json`, `recent.json`, `library.json`, `queue.json`, `thumbs/`,
-  `logs/`.
+- App data while developing (git-ignored): `config.json`, `recent.json`, `library.json`, `queue.json`, `busy.lock`,
+  `thumbs/`, `logs/`.
 - `subloc/gui.py` is the old pre-redesign window — unused, safe to delete.
 
 ## Rules (hard-won)
@@ -50,13 +54,14 @@ Since 0.1.0: no console windows; Home = New project + Recent projects; Library t
 Refresh by hand, optional watching; status per video from subtitle files, tracks inside, Subloc progress);
 dropped folders include subfolders; the queue is kept between sessions (queue.json), its Stop works,
 the PC is kept awake while working (`power`), a notification when it's done, optional sleep/shut down
-after it (60 s countdown, never remembered between sessions).
+after it (60 s countdown, never remembered between sessions); new logo (Plex Serif S) + opening animation
+(`ui/intro`); CLI with sub-commands + `--json`, MCP server for agents, shared busy lock.
 
 ## Next
 
 1. **Windows installer** (PyInstaller or Nuitka): bundle Python app + `vendor/` (llama.cpp CUDA+Vulkan,
    libmpv) + an ffmpeg build; data in `%LOCALAPPDATA%\Subloc` (see `config.data_dir`); first launch → Setup.
    NVIDIA CUDA DLLs: bundle or fetch at setup (licence permission is in THIRD_PARTY_NOTICES.md).
-2. Publish v0.1.0 on GitHub Releases. Check the GitHub Actions run (first one was never confirmed).
+2. Publish v0.1.0 on GitHub Releases (GitHub Actions checks run on every push and pass).
 3. Later: reading burned-in subtitles (research notes in PLAN.md §2.2), live captions for system audio,
    CapCut-style animated captions, more UI languages.

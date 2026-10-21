@@ -28,9 +28,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .. import library, power, proc, recent
+from .. import batch, library, power, proc, recent
 from ..batch import BatchReporter, Item, find_videos, load_queue, run_batch, save_queue
 from ..burn import burn
+from ..busy import BusyLock, holder
 from ..catalog import TRANSLATORS
 from ..config import Config
 from ..engine import BuiltinEngine
@@ -116,6 +117,10 @@ class MainWindow(QMainWindow):
         self.last_frame_at = 0.0
         self.started = time.time()
         self.queue: list[Item] = load_queue()  # kept between sessions
+        self.busy = BusyLock("Subloc's window")  # the graphics card, shared with the command line and agents
+        self._seen: dict[str, float] = {}  # list files' times when last read (the CLI or an agent may change them)
+        for name, path in (("recent", recent._file()), ("library", library._file()), ("queue", batch._queue_file())):
+            self._outside_change(name, path)  # the times at start: later changes came from outside
         self.queue_progress: dict[int, float] = {}
         self.tray: QSystemTrayIcon | None = None
         self.countdown_secs = 60  # before sleeping / shutting down after a queue
@@ -243,6 +248,13 @@ class MainWindow(QMainWindow):
         if key == "home":
             self._show_recent()
         self.stack.setCurrentWidget(pages[key])
+        if key == "library" and self.lib_job is None and self._outside_change("library", library._file()):
+            self.lib = library.load()
+            self._update_watcher()
+        if key == "queue" and self.queue_job is None and self._outside_change("queue", batch._queue_file()):
+            self.queue = load_queue()
+            self.queue_progress.clear()
+            self._refresh_queue()
         if key == "library":
             self._library_changed(save=False)
         self.top.select(key)
@@ -357,8 +369,20 @@ class MainWindow(QMainWindow):
 
     # ---------------------------------------------------------------- recent projects
 
+    def _outside_change(self, name: str, path: Path) -> bool:
+        """Did the file change since it was last read here? (The command line or an agent may have written it.)"""
+        try:
+            t = path.stat().st_mtime
+        except OSError:
+            return False
+        changed = name in self._seen and t != self._seen[name]
+        self._seen[name] = t
+        return changed
+
     def _show_recent(self) -> None:
         """Refresh summaries whose project file changed (edits, CLI runs), then redraw the list."""
+        if self._outside_change("recent", recent._file()):
+            self.recent = recent.load()
         changed = [r for r in self.recent if recent.summarize(r)]
         if changed:
             recent.save(self.recent)
@@ -634,6 +658,8 @@ class MainWindow(QMainWindow):
 
     def start_job(self) -> None:
         if self.video is None or self.job is not None:
+            return
+        if not self._take_gpu(self.video.name):
             return
         self._save()
         opt = self.options()
@@ -1118,6 +1144,8 @@ class MainWindow(QMainWindow):
         todo = [it.video for it in self.queue if it.status in ("waiting", "stopped", "failed")]
         if not todo or self.queue_job is not None:
             return
+        if not self._take_gpu(tr("the queue")):
+            return
         self._save()
         opt = self.options()
         opt.prefer_builtin_subs = True
@@ -1179,9 +1207,20 @@ class MainWindow(QMainWindow):
 
     # ---------------------------------------------------------------- notifications and power
 
+    def _take_gpu(self, what: str) -> bool:
+        """The busy lock: one heavy job at a time on this PC, also across the command line and agents."""
+        if self.busy.acquire(what):
+            return True
+        QMessageBox.information(self, tr("Subloc is busy"), tr("Another Subloc is working: {who}. Try again when "
+                                "it's done.", who=holder() or tr("the command line")))  # fmt: skip
+        return False
+
     def _update_awake(self) -> None:
         """Windows mustn't fall asleep in the middle of a long queue (the screen may still turn off)."""
-        power.keep_awake(self.job is not None or self.queue_job is not None)
+        working = self.job is not None or self.queue_job is not None
+        power.keep_awake(working)
+        if not working:
+            self.busy.release()
 
     def _tray_icon(self) -> QSystemTrayIcon | None:
         if self.tray is None and QSystemTrayIcon.isSystemTrayAvailable():
@@ -1289,6 +1328,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, e):
         self.lib_cancel.set()
+        self.busy.release()
         if getattr(self, "_closing_for_restart", False):
             self.jobp.player.shutdown()
             if self.engine is not None:
