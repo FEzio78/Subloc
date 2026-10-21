@@ -59,7 +59,10 @@ def font(size: float = 10, weight: QFont.Weight = QFont.Weight.Normal, family: s
 
 
 def stylesheet() -> str:
+    from .i18n import rtl
+
     CHEVRON = (FONTS_DIR.parent / "chevron.svg").as_posix()
+    CLOSED = (FONTS_DIR.parent / ("chevron-left.svg" if rtl() else "chevron-right.svg")).as_posix()
     return f"""
     QWidget {{ color: {TEXT}; font-family: "{SANS}"; font-size: 10pt; }}
     QMainWindow, #page {{ background: {BG}; }}
@@ -122,6 +125,18 @@ def stylesheet() -> str:
     QScrollBar::add-line, QScrollBar::sub-line, QScrollBar::add-page, QScrollBar::sub-page {{
         background: none; height: 0; }}
     QListView {{ background: transparent; border: none; outline: none; }}
+
+    QTreeWidget#library {{ background: {SURFACE}; border: 1px solid {LINE}; border-radius: 12px; padding: 4px;
+                           outline: none; }}
+    QTreeWidget#library::item {{ padding: 5px 2px; border: none; }}
+    QTreeWidget#library::item:hover {{ background: {SURFACE_2}; }}
+    QTreeWidget#library::item:selected {{ background: {SURFACE_3}; color: {TEXT}; }}
+    QTreeWidget#library::branch {{ background: transparent; }}
+    QTreeWidget#library::branch:has-children:closed {{ image: url({CLOSED}); }}
+    QTreeWidget#library::branch:has-children:open {{ image: url({CHEVRON}); }}
+    QHeaderView::section {{ background: {SURFACE}; color: {MUTED}; border: none; border-bottom: 1px solid {LINE};
+                            padding: 6px 8px; font-size: 9pt; }}
+    QCheckBox#watch {{ spacing: 8px; color: {MUTED}; }}
 
     QSlider::groove:horizontal {{ height: 4px; background: {SURFACE_3}; border-radius: 2px; }}
     QSlider::sub-page:horizontal {{ background: {ACCENT}; border-radius: 2px; }}

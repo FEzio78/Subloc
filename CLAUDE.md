@@ -23,9 +23,11 @@ All four checks must pass before committing.
   `segment` · `subparse` · `glossary` (name list per folder) · `translate` (batches, enforced JSON with exact
   count + id enum, `src` anchoring, retries, parallel) · `llm` (OpenAI-compatible client) · `engine`
   (built-in llama-server) · `pipeline` (one video, caching) · `batch` · `style`/`burn`/`subtitles` (outputs) ·
-  `catalog`/`hardware`/`download`/`config` (setup) · `cli`.
-- UI (`subloc/ui`): `app` (main window/controller) · `pages` · `widgets` · `lines` · `player` (libmpv) ·
-  `style_dialog` · `setup` (wizard) · `i18n` (Arabic table) · `theme`.
+  `catalog`/`hardware`/`download`/`config` (setup) · `recent` (Home list) · `library` (folder index, scans) ·
+  `proc` (every process starts here, hidden: no console windows; test enforces) · `cli`.
+- UI (`subloc/ui`): `app` (main window/controller) · `pages` (Home, Job, Queue, Settings) · `library_page` ·
+  `widgets` · `lines` · `player` (libmpv) · `style_dialog` · `setup` (wizard) · `i18n` (Arabic table) · `theme`.
+- App data while developing (git-ignored): `config.json`, `recent.json`, `library.json`, `thumbs/`, `logs/`.
 - `subloc/gui.py` is the old pre-redesign window — unused, safe to delete.
 
 ## Rules (hard-won)
@@ -34,15 +36,18 @@ All four checks must pass before committing.
 - The LLM never sees timestamps; lines are matched back by id and checked.
 - UI text: `tr()` for dynamic/drawn text, static widgets are translated by `translate_tree`; add Arabic to `i18n.py`.
 - Never name attributes after Qt methods (`style`, `size`, `screen`, `thread`, `done`…) — test enforces.
-- Write direction marks as escapes (`"‏"`), never raw — test enforces. File-writing tools have turned
-  `‏` into a raw character before: check after writing.
+- Write direction marks as escapes (`"\u200f"`, `"\u2066"`…), never raw — test enforces. The Edit/Write
+  tools turn escapes into raw characters: after writing one, check with grep and fix with a script (`chr(92)`).
 - Arabic output: MSA, standard Arabic letters only, numbers/model codes as spoken digits (Eight-Six → 86).
 - Defaults the user chose: 2 parallel translation requests (1–4 selectable); the user picks models.
 
-## Status (2026-10-20)
+## Status (2026-10-22)
 
 Done: engine quality pass on 11 real videos / 9 languages (0 missing lines), built-in translator,
 Setup wizard, new UI + Arabic UI, styles with libass preview, player, burn-in, queue, open-source release.
+Since 0.1.0: no console windows; Home = New project + Recent projects; Library tab (folders scanned once,
+Refresh by hand, optional watching; status per video from subtitle files, tracks inside, Subloc progress);
+dropped folders include subfolders.
 
 ## Next
 

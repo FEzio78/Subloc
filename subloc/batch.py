@@ -7,6 +7,7 @@ Two phases so the GPU is used well:
 One failing file never stops the rest.
 """
 
+import os
 import re
 import threading
 from dataclasses import dataclass, replace
@@ -18,18 +19,37 @@ from .models import Project
 from .pipeline import Cancelled, Options, Reporter, project_path, run
 
 VIDEO_EXT = {".mp4", ".mkv", ".avi", ".mov", ".webm", ".m4v", ".ts", ".flv", ".wmv", ".mp3", ".wav", ".m4a"}
+SKIP_DIRS = {"$recycle.bin", "system volume information", "sample", "samples", "@eadir", "#recycle"}
 
 
-def natural_key(p: Path):
+def natural(text: str) -> list:
     """'Ep 2' before 'Ep 10'."""
-    return [int(s) if s.isdigit() else s.lower() for s in re.split(r"(\d+)", p.name)]
+    return [int(s) if s.isdigit() else s.lower() for s in re.split(r"(\d+)", text)]
+
+
+def natural_key(p: Path) -> list:
+    return natural(p.name)
+
+
+def skip_dir(name: str) -> bool:
+    """System and hidden folders, and the 'Sample' clips that come with releases: nothing to translate there."""
+    return name.lower() in SKIP_DIRS or name.startswith((".", "$"))
+
+
+def walk_videos(folder: Path, ext: set[str] = VIDEO_EXT) -> list[Path]:
+    """Every video in `folder` and all its subfolders, in reading order (Season 2 / Ep 10 after Season 1 / Ep 9)."""
+    out: list[Path] = []
+    for here, dirs, files in os.walk(folder):  # doesn't follow links, so no loops
+        dirs[:] = [d for d in dirs if not skip_dir(d)]
+        out += [Path(here, f) for f in files if os.path.splitext(f)[1].lower() in ext]
+    return sorted(out, key=lambda p: [natural(part) for part in p.relative_to(folder).parts])
 
 
 def find_videos(paths: list[Path]) -> list[Path]:
     out: list[Path] = []
     for p in paths:
         if p.is_dir():
-            out += sorted((f for f in p.iterdir() if f.suffix.lower() in VIDEO_EXT), key=natural_key)
+            out += walk_videos(p)
         elif p.suffix.lower() in VIDEO_EXT:
             out.append(p)
     seen, unique = set(), []

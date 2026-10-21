@@ -101,19 +101,19 @@ def summarize(item: Recent) -> bool:
         stamp = 0.0
     if stamp == item.stamp:
         return False
-    lines = translated = 0
-    target = item.target
-    if stamp:
-        try:  # plain JSON is enough for counting; building every Cue object would be slower
-            data = json.loads(proj.read_text(encoding="utf-8"))
-            cues = data.get("cues") or []
-            lines = len(cues)
-            translated = sum(1 for c in cues if c.get("translation"))
-            target = data.get("target_language") or target
-        except (OSError, ValueError, AttributeError):
-            pass
-    item.lines, item.translated, item.target, item.stamp = lines, translated, target, stamp
+    lines, translated, target = project_summary(proj) if stamp else (0, 0, None)
+    item.lines, item.translated, item.target, item.stamp = lines, translated, target or item.target, stamp
     return True
+
+
+def project_summary(proj: Path) -> tuple[int, int, str | None]:
+    """(lines, translated lines, target language) of a project file; zeros when it can't be read."""
+    try:  # plain JSON is enough for counting; building every Cue object would be slower
+        data = json.loads(proj.read_text(encoding="utf-8"))
+        cues = data.get("cues") or []
+        return len(cues), sum(1 for c in cues if c.get("translation")), data.get("target_language")
+    except (OSError, ValueError, AttributeError):
+        return 0, 0, None
 
 
 def thumb_path(video: Path | str) -> Path:

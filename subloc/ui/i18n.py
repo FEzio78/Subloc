@@ -87,6 +87,51 @@ AR: dict[str, str] = {
     "Open": "فتح",
     "Show in folder": "إظهار في المجلد",
     "Remove from list": "إزالة من القائمة",
+    # ---- library
+    "Library": "المكتبة",
+    "Search": "بحث",
+    "All": "الكل",
+    "Untranslated": "غير المترجمة",
+    "Watch for changes": "متابعة التغييرات",
+    "Update the list by itself when videos are added, removed or renamed in these folders. Network drives may "
+    "not report changes.":
+        "تحديث القائمة تلقائيًا عند إضافة مقاطع أو حذفها أو إعادة تسميتها في هذه المجلدات. قد لا تُبلغ أقراص الشبكة "
+        "عن التغييرات.",
+    "Refresh": "تحديث",
+    "Read every library folder again": "إعادة قراءة كل مجلدات المكتبة",
+    "Add folder…": "إضافة مجلد…",
+    "Add your video folders": "أضف مجلدات الفيديو",
+    "Point Subloc at the folders where you keep movies, series or anime. It finds every video inside them, in all "
+    "subfolders, and shows which ones still need subtitles.":
+        "حدّد لـ Subloc المجلدات التي تحفظ فيها الأفلام أو المسلسلات أو الأنمي، فيجد كل مقطع فيها وفي مجلداتها "
+        "الفرعية، ويُظهر ما يحتاج منها إلى ترجمة.",
+    "Choose a library folder": "اختر مجلدًا للمكتبة",
+    "Name": "الاسم",
+    "Subtitles": "الترجمة",
+    "Length": "المدة",
+    "{n} videos · {d} done": "المقاطع: {n} · المكتملة: {d}",
+    "{d} of {n} done": "{d} من {n} مكتملة",
+    "No videos found": "لا توجد مقاطع",
+    "Has {lang} subtitles": "توجد ترجمة باللغة {lang}",
+    "Has subtitles": "توجد ترجمة",
+    "No subtitles": "بلا ترجمة",
+    "Everything": "المكتبة كلها",
+    "{where} · {d} of {n} done": "{where} · {d} من {n} مكتملة",
+    "Translate": "ترجمة",
+    "Translate {n} untranslated": "ترجمة غير المترجمة ({n})",
+    "Refresh this folder": "تحديث هذا المجلد",
+    "Remove from library": "إزالة من المكتبة",
+    "Remove from library?": "إزالة من المكتبة؟",
+    "{folder} won't be listed any more. Nothing is deleted from your disk.":
+        "لن يظهر {folder} في المكتبة بعد الآن. لن يُحذف أي شيء من القرص.",
+    "Already in the library": "موجود في المكتبة",
+    "{folder} is inside a folder that's already in the library.": "{folder} داخل مجلد موجود في المكتبة بالفعل.",
+    "Folder not found": "المجلد غير موجود",
+    "{folder} can't be reached. Is the drive connected?": "تعذّر الوصول إلى {folder}. هل القرص موصول؟",
+    "Reading {folder}…": "جارٍ قراءة {folder}…",
+    "Reading {folder}… {n} videos found": "جارٍ قراءة {folder}… المقاطع حتى الآن: {n}",
+    "Checking the subtitles inside new videos… {n} of {total}":
+        "جارٍ فحص الترجمات داخل المقاطع الجديدة… {n} من {total}",
     "{name} was moved, renamed or deleted.": "نُقل الملف {name} أو أُعيدت تسميته أو حُذف.",
     "Find it…": "ابحث عنه…",
     "Find {name}": "ابحث عن {name}",

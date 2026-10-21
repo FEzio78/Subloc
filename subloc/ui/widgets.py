@@ -74,7 +74,7 @@ class StatusDot(QWidget):
 
 
 class TopBar(QFrame):
-    navigate = Signal(str)  # "home" | "queue" | "settings"
+    navigate = Signal(str)  # "home" | "library" | "queue" | "settings"
 
     def __init__(self):
         super().__init__()
@@ -88,7 +88,7 @@ class TopBar(QFrame):
         lay.addSpacing(18)
         self.group = QButtonGroup(self)
         self.buttons: dict[str, QPushButton] = {}
-        for key, text in (("home", "Home"), ("queue", "Queue"), ("settings", "Settings")):
+        for key, text in (("home", "Home"), ("library", "Library"), ("queue", "Queue"), ("settings", "Settings")):
             b = QPushButton(tr(text))
             b.setObjectName("nav")
             b.setCheckable(True)

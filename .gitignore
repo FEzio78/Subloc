@@ -38,6 +38,7 @@ vendor/
 logs/
 config.json
 recent.json
+library.json
 # Home-screen thumbnails: frames of the user's videos
 thumbs/
 *.part

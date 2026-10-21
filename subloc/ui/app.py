@@ -11,7 +11,7 @@ import threading
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QSettings, QStandardPaths, Qt, QTimer, Signal
+from PySide6.QtCore import QFileSystemWatcher, QObject, QSettings, QStandardPaths, Qt, QTimer, Signal
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .. import proc, recent
+from .. import library, proc, recent
 from ..batch import BatchReporter, Item, find_videos, run_batch
 from ..burn import burn
 from ..catalog import TRANSLATORS
@@ -52,6 +52,7 @@ from ..style import DEFAULT, PRESETS, SubStyle, write_ass
 from ..subtitles import RTL
 from . import theme as t
 from .i18n import rtl, set_language, tr, translate_tree
+from .library_page import LibraryPage
 from .lines import Row
 from .pages import HomePage, JobPage, QueuePage, SettingsPage, select_data
 from .player import available as player_available
@@ -87,6 +88,8 @@ class Bus(QObject):
     burn_progress = Signal(float)
     burn_done = Signal(str, str)
     thumb = Signal(str, float)  # video, duration (Home list thumbnail is ready)
+    lib_progress = Signal(str)
+    lib_scanned = Signal(object)  # library.Scan, or None when stopped
 
 
 def _rows(cues: list[Cue]) -> list[Row]:
@@ -120,6 +123,13 @@ class MainWindow(QMainWindow):
         self.recent = recent.load()
         self._thumb_tried: set[str] = set()
         self._thumb_job: threading.Thread | None = None
+        self.lib = library.load()
+        self.lib_job: threading.Thread | None = None
+        self.lib_cancel = threading.Event()
+        self._scans: list[tuple[str, bool]] = []  # (folder, deep) waiting to be read
+        self.watcher = QFileSystemWatcher(self)
+        self._changed: set[str] = set()
+        self._change_timer = QTimer(self, singleShot=True, interval=3000)  # changes come in bursts
 
         root = QWidget()
         lay = QVBoxLayout(root)
@@ -130,7 +140,8 @@ class MainWindow(QMainWindow):
         lay.addWidget(self.top)
         self.stack = QStackedWidget()
         self.home, self.jobp, self.queuep, self.settingsp = HomePage(), JobPage(), QueuePage(), SettingsPage()
-        for p in (self.home, self.jobp, self.queuep, self.settingsp):
+        self.libp = LibraryPage()
+        for p in (self.home, self.jobp, self.libp, self.queuep, self.settingsp):
             self.stack.addWidget(p)
         lay.addWidget(self.stack, 1)
         self.setCentralWidget(root)
@@ -138,6 +149,7 @@ class MainWindow(QMainWindow):
         self._wire()
         self._restore()
         self._show_recent()
+        self._update_watcher()
         self._make_engine()  # after the screens exist: it updates the Settings page
         translate_tree(self)
         self.engine_timer = QTimer(self, interval=12000)
@@ -164,6 +176,19 @@ class MainWindow(QMainWindow):
         b.burn_progress.connect(self._on_burn_progress)
         b.burn_done.connect(self._on_burn_done)
         b.thumb.connect(self._on_thumb)
+        b.lib_progress.connect(self.libp.set_progress)
+        b.lib_scanned.connect(self._on_lib_scanned)
+        lp = self.libp
+        lp.add_folder.connect(self.add_library_folder)
+        lp.refresh.connect(self.refresh_library)
+        lp.remove_root.connect(self.remove_library_root)
+        lp.watch.connect(self.set_library_watch)
+        lp.open_video.connect(lambda v: self.open_video(Path(v)))
+        lp.translate.connect(self.queue_from_library)
+        lp.reveal.connect(lambda v: reveal(Path(v)))
+        self.watcher.directoryChanged.connect(self._on_dir_changed)
+        self._change_timer.timeout.connect(self._flush_changes)
+        self.home.tgt.currentIndexChanged.connect(lambda *_: self._library_changed(save=False))
 
         self.home.files.connect(self.open_paths)
         self.home.open_recent.connect(self.open_recent)
@@ -205,12 +230,122 @@ class MainWindow(QMainWindow):
         s.language.connect(self.change_language)
 
     def show_page(self, key: str) -> None:
-        """Home (new project + recent ones; the running video is listed first), Queue or Settings."""
-        pages = {"home": self.home, "queue": self.queuep, "settings": self.settingsp}
+        """Home (new project + recent ones; the running video is listed first), Library, Queue or Settings."""
+        pages = {"home": self.home, "library": self.libp, "queue": self.queuep, "settings": self.settingsp}
         if key == "home":
             self._show_recent()
         self.stack.setCurrentWidget(pages[key])
+        if key == "library":
+            self._library_changed(save=False)
         self.top.select(key)
+
+    # ---------------------------------------------------------------- library
+
+    def _library_changed(self, save: bool = True) -> None:
+        if save:
+            library.save(self.lib)
+        if self.stack.currentWidget() is self.libp:  # otherwise it's drawn when the page is shown
+            self.libp.set_library(self.lib, self.home.tgt.currentData())
+
+    def add_library_folder(self, folder: str) -> None:
+        folder = os.path.normpath(folder)
+        if not library.add_root(self.lib, Path(folder)):
+            msg = tr("{folder} is inside a folder that's already in the library.", folder=folder)
+            QMessageBox.information(self, tr("Already in the library"), msg)
+            return
+        self._library_changed()
+        self._scan(folder, deep=True)  # the first scan; after that only Refresh (or watching) reads it again
+
+    def refresh_library(self, folder: str) -> None:
+        for f in [folder] if folder else self.lib.roots:
+            self._scan(os.path.normpath(f), deep=True)
+
+    def remove_library_root(self, root: str) -> None:
+        if QMessageBox.question(self, tr("Remove from library?"),
+                                tr("{folder} won't be listed any more. Nothing is deleted from your disk.",
+                                   folder=root)) != QMessageBox.StandardButton.Yes:  # fmt: skip
+            return
+        k = recent.key(root)
+        self._scans = [s for s in self._scans if not library.inside(recent.key(s[0]), k)]
+        library.remove_root(self.lib, root)
+        self._library_changed()
+        self._update_watcher()
+
+    def queue_from_library(self, videos: list[str]) -> None:
+        self.add_to_queue([Path(v) for v in videos])
+        self.show_page("queue")
+
+    def _scan(self, folder: str, deep: bool) -> None:
+        if (folder, deep) not in self._scans:
+            self._scans.append((folder, deep))
+        self._next_scan()
+
+    def _next_scan(self) -> None:
+        while self.lib_job is None and self._scans:
+            folder, deep = self._scans.pop(0)
+            if os.path.isdir(folder):
+                self._start_scan(folder, deep)
+            elif deep:  # unplugged drive or deleted: keep what the index knows
+                msg = tr("{folder} can't be reached. Is the drive connected?", folder=folder)
+                QMessageBox.information(self, tr("Folder not found"), msg)
+
+    def _start_scan(self, folder: str, deep: bool) -> None:
+        name = os.path.basename(folder.rstrip("\\/")) or folder
+        bus, cancel, lib, last = self.bus, self.lib_cancel, self.lib, [0.0]
+
+        def progress(stage: str, n: int, total: int) -> None:
+            if time.time() - last[0] > 0.2:
+                last[0] = time.time()
+                bus.lib_progress.emit(
+                    tr("Reading {folder}… {n} videos found", folder=name, n=n) if stage == "files"
+                    else tr("Checking the subtitles inside new videos… {n} of {total}", n=n, total=total))  # fmt: skip
+
+        def work() -> None:
+            try:
+                bus.lib_scanned.emit(library.scan_folder(folder, lib, deep, cancel, progress if deep else None))
+            except Exception:  # stopped, or the folder vanished midway
+                bus.lib_scanned.emit(None)
+
+        if deep:
+            self.libp.set_progress(tr("Reading {folder}…", folder=name))
+        self.lib_job = threading.Thread(target=work, daemon=True)
+        self.lib_job.start()
+
+    def _on_lib_scanned(self, s: library.Scan | None) -> None:
+        self.lib_job = None
+        self.libp.set_progress("")
+        if s is not None and any(library.inside(recent.key(s.folder), recent.key(r)) for r in self.lib.roots):
+            library.apply(self.lib, s)  # (skipped when its folder was removed from the library meanwhile)
+            self._library_changed()
+            self._update_watcher()
+        self._next_scan()
+
+    def set_library_watch(self, on: bool) -> None:
+        self.lib.watch = on
+        library.save(self.lib)
+        self._update_watcher()
+
+    def _update_watcher(self) -> None:
+        want = {recent.key(f): f for f in self.lib.folders if os.path.isdir(f)} if self.lib.watch else {}
+        have = {recent.key(f): f for f in self.watcher.directories()}
+        if old := [p for k, p in have.items() if k not in want]:
+            self.watcher.removePaths(old)
+        if new := [p for k, p in want.items() if k not in have]:
+            self.watcher.addPaths(new)
+
+    def _on_dir_changed(self, folder: str) -> None:
+        self._changed.add(os.path.normpath(folder))
+        self._change_timer.start()
+
+    def _flush_changes(self) -> None:
+        for folder in sorted(self._changed):
+            self._scan(folder, deep=False)  # its own files, plus any new subfolders
+        self._changed.clear()
+
+    def _library_video_done(self, video: Path) -> None:
+        """Subloc wrote subtitles or progress next to a video: update its line in the library."""
+        if library.refresh_video(self.lib, video):
+            self._library_changed()
 
     # ---------------------------------------------------------------- recent projects
 
@@ -595,6 +730,8 @@ class MainWindow(QMainWindow):
         self.job = None
         self.home.set_live(None)
         self._show_recent()  # the project file changed: new status on its row
+        if self.video:
+            self._library_video_done(self.video)
 
     def _on_finished(self, outputs: list) -> None:
         self._job_ended()
@@ -995,6 +1132,7 @@ class MainWindow(QMainWindow):
         self._refresh_queue()
         if status in ("done", "failed", "stopped"):  # worked on: list it on Home
             self._remember(self.queue[i].video)
+            self._library_video_done(self.queue[i].video)
 
     def _on_queue_done(self) -> None:
         self.queue_job = None
@@ -1040,6 +1178,7 @@ class MainWindow(QMainWindow):
         _windows.remove(self)
 
     def closeEvent(self, e):
+        self.lib_cancel.set()
         if getattr(self, "_closing_for_restart", False):
             self.jobp.player.shutdown()
             if self.engine is not None:
