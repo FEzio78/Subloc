@@ -1,7 +1,7 @@
 """Custom-drawn pieces of the interface (see design/mockup.html)."""
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen, QPixmap
+from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup,
     QComboBox,
@@ -51,6 +51,26 @@ class BrandMark(QWidget):
         p.setBrush(QColor(t.ACCENT))
         p.drawRoundedRect(QRectF(5, 9, 16, 2.6), 1.3, 1.3)
         p.drawRoundedRect(QRectF(8, 13, 10, 2.6), 1.3, 1.3)
+
+
+def app_icon() -> QIcon:
+    """The brand mark as the window / taskbar / notification icon: a dark screen with two yellow subtitle lines."""
+    icon = QIcon()
+    for size in (16, 24, 32, 48, 64, 128, 256):
+        pix = QPixmap(size, size)
+        pix.fill(Qt.GlobalColor.transparent)
+        p = QPainter(pix)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setPen(Qt.PenStyle.NoPen)
+        s = size / 26
+        p.setBrush(QColor(t.SURFACE_3))
+        p.drawRoundedRect(QRectF(0, 3 * s, 26 * s, 20 * s), 4.5 * s, 4.5 * s)
+        p.setBrush(QColor(t.ACCENT))
+        p.drawRoundedRect(QRectF(4.5 * s, 12 * s, 17 * s, 3.2 * s), 1.6 * s, 1.6 * s)
+        p.drawRoundedRect(QRectF(8 * s, 17 * s, 10 * s, 3.2 * s), 1.6 * s, 1.6 * s)
+        p.end()
+        icon.addPixmap(pix)
+    return icon
 
 
 class StatusDot(QWidget):

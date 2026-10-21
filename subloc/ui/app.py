@@ -3,6 +3,7 @@ back through Qt signals (queued onto the UI thread)."""
 
 import bisect
 import contextlib
+import ctypes
 import json
 import os
 import shutil
@@ -22,12 +23,13 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressDialog,
     QStackedWidget,
+    QSystemTrayIcon,
     QVBoxLayout,
     QWidget,
 )
 
-from .. import library, proc, recent
-from ..batch import BatchReporter, Item, find_videos, run_batch
+from .. import library, power, proc, recent
+from ..batch import BatchReporter, Item, find_videos, load_queue, run_batch, save_queue
 from ..burn import burn
 from ..catalog import TRANSLATORS
 from ..config import Config
@@ -58,7 +60,7 @@ from .pages import HomePage, JobPage, QueuePage, SettingsPage, select_data
 from .player import available as player_available
 from .setup import SetupWizard
 from .style_dialog import StyleDialog
-from .widgets import TopBar, fmt_time
+from .widgets import TopBar, app_icon, fmt_time
 
 PROGRAM_FILES = [Path(os.environ.get("PROGRAMFILES", "C:/Program Files")),
                  Path(os.environ.get("PROGRAMFILES(X86)", "C:/Program Files (x86)"))]  # fmt: skip
@@ -112,8 +114,10 @@ class MainWindow(QMainWindow):
         self.frame_request = 0
         self.last_frame_at = 0.0
         self.started = time.time()
-        self.queue: list[Item] = []
+        self.queue: list[Item] = load_queue()  # kept between sessions
         self.queue_progress: dict[int, float] = {}
+        self.tray: QSystemTrayIcon | None = None
+        self.countdown_secs = 60  # before sleeping / shutting down after a queue
         self._burn_dialog: QProgressDialog | None = None
         self.queue_job: threading.Thread | None = None
         self.queue_cancel = threading.Event()
@@ -149,6 +153,7 @@ class MainWindow(QMainWindow):
         self._wire()
         self._restore()
         self._show_recent()
+        self._refresh_queue()
         self._update_watcher()
         self._make_engine()  # after the screens exist: it updates the Settings page
         translate_tree(self)
@@ -220,9 +225,11 @@ class MainWindow(QMainWindow):
         q = self.queuep
         q.add.connect(self.add_to_queue_dialog)
         q.start.connect(self.start_queue)
-        q.stop.connect(self.queue_cancel.set)
+        q.stop.connect(self.stop_queue)
         q.clear.connect(self.clear_queue)
         q.open_item.connect(lambda i: self.open_video(self.queue[i].video))
+        q.reveal_item.connect(lambda i: reveal(self.queue[i].video))
+        q.remove_item.connect(self.remove_from_queue)
         s = self.settingsp
         s.changed.connect(self._save)
         s.edit_style.connect(self.edit_style)
@@ -665,6 +672,7 @@ class MainWindow(QMainWindow):
 
         self.job = threading.Thread(target=work, daemon=True)
         self.job.start()
+        self._update_awake()
 
     def stop_job(self) -> None:
         self.cancel.set()
@@ -728,6 +736,7 @@ class MainWindow(QMainWindow):
 
     def _job_ended(self) -> None:
         self.job = None
+        self._update_awake()
         self.home.set_live(None)
         self._show_recent()  # the project file changed: new status on its row
         if self.video:
@@ -735,6 +744,8 @@ class MainWindow(QMainWindow):
 
     def _on_finished(self, outputs: list) -> None:
         self._job_ended()
+        if self.video and not self.isActiveWindow():  # working in another window meanwhile: tell them
+            self._notify(tr("Subtitles ready"), self.video.name)
         proj = self._load_project()
         if proj:
             self.cues = proj.cues
@@ -1077,10 +1088,23 @@ class MainWindow(QMainWindow):
     def add_to_queue(self, videos: list[Path]) -> None:
         known = {it.video for it in self.queue}
         self.queue += [Item(v.resolve()) for v in videos if v.resolve() not in known]
-        self._refresh_queue()
+        self._queue_changed()
 
     def clear_queue(self) -> None:
         self.queue = [it for it in self.queue if it.status not in ("done", "skipped", "failed")]
+        self._queue_changed()
+
+    def remove_from_queue(self, i: int) -> None:
+        if self.queue_job is None and 0 <= i < len(self.queue):  # a running queue tracks items by position
+            del self.queue[i]
+            self.queue_progress.clear()
+            self._queue_changed()
+
+    def stop_queue(self) -> None:
+        self.queue_cancel.set()  # (the event is replaced at every start: look it up now, not when wiring)
+
+    def _queue_changed(self) -> None:
+        save_queue(self.queue)
         self._refresh_queue()
 
     def _refresh_queue(self) -> None:
@@ -1121,6 +1145,8 @@ class MainWindow(QMainWindow):
         self.queuep.set_running(True)
         self.queue_job = threading.Thread(target=work, daemon=True)
         self.queue_job.start()
+        self._update_awake()
+        self._tray_tip()
 
     def _on_queue_progress(self, i: int, frac: float) -> None:
         self.queue_progress[i] = frac
@@ -1129,7 +1155,8 @@ class MainWindow(QMainWindow):
     def _on_queue_item(self, i: int, status: str, error: str) -> None:
         self.queue_progress.pop(i, None)
         self.queue[i].status, self.queue[i].error = status, error
-        self._refresh_queue()
+        self._queue_changed()
+        self._tray_tip()
         if status in ("done", "failed", "stopped"):  # worked on: list it on Home
             self._remember(self.queue[i].video)
             self._library_video_done(self.queue[i].video)
@@ -1137,7 +1164,89 @@ class MainWindow(QMainWindow):
     def _on_queue_done(self) -> None:
         self.queue_job = None
         self.queuep.set_running(False)
-        self._refresh_queue()
+        self._queue_changed()
+        self._update_awake()
+        if self.queue_cancel.is_set():  # stopped by the user: no message, no sleep or shutdown
+            return
+        done = sum(it.status in ("done", "skipped") for it in self.queue)
+        failed = sum(it.status == "failed" for it in self.queue)
+        self._notify(tr("Queue finished"), tr("{d} videos done · {f} failed", d=done, f=failed) if failed
+                     else tr("All {d} videos are done.", d=done))  # fmt: skip
+        action = self.queuep.when_done.currentData()
+        if action in ("sleep", "shutdown"):
+            self._after_queue(action)
+
+    # ---------------------------------------------------------------- notifications and power
+
+    def _update_awake(self) -> None:
+        """Windows mustn't fall asleep in the middle of a long queue (the screen may still turn off)."""
+        power.keep_awake(self.job is not None or self.queue_job is not None)
+
+    def _tray_icon(self) -> QSystemTrayIcon | None:
+        if self.tray is None and QSystemTrayIcon.isSystemTrayAvailable():
+            self.tray = QSystemTrayIcon(self.windowIcon(), self)
+            self.tray.messageClicked.connect(self._bring_to_front)
+            self.tray.activated.connect(lambda *_: self._bring_to_front())
+        if self.tray is not None:
+            self.tray.show()
+        return self.tray
+
+    def _tray_tip(self) -> None:
+        """The tray icon shows how far the queue is (hover it)."""
+        tray = self._tray_icon()
+        if tray is not None:
+            done = sum(it.status in ("done", "skipped", "failed") for it in self.queue)
+            tray.setToolTip(tr("Subloc · queue: {d} of {n} finished", d=done, n=len(self.queue)))
+
+    def _notify(self, title: str, text: str) -> None:
+        """A Windows notification, plus the taskbar button flashing until the window is looked at."""
+        tray = self._tray_icon()
+        if tray is not None:
+            tray.showMessage(title, text, self.windowIcon(), 15000)
+        QApplication.alert(self)
+
+    def _bring_to_front(self) -> None:
+        if self.isMinimized():
+            self.showNormal()
+        self.raise_()
+        self.activateWindow()
+
+    def _after_queue(self, action: str) -> None:
+        """Sleep or shut down after a finished queue, with a minute to change one's mind."""
+        sleep = action == "sleep"
+        text = ("The queue is done. The PC will go to sleep in {n} seconds." if sleep
+                else "The queue is done. The PC will shut down in {n} seconds.")  # fmt: skip
+        box = QMessageBox(QMessageBox.Icon.Information, tr("Queue finished"), "", parent=self)
+        now = box.addButton(tr("Sleep now") if sleep else tr("Shut down now"), QMessageBox.ButtonRole.AcceptRole)
+        box.addButton(tr("Cancel"), QMessageBox.ButtonRole.RejectRole)
+        left, fired = [self.countdown_secs], [False]
+        timer = QTimer(box, interval=1000)
+
+        def tick() -> None:
+            if left[0] <= 0:
+                fired[0] = True
+                timer.stop()
+                box.close()
+                return
+            box.setText(tr(text, n=left[0]))
+            left[0] -= 1
+
+        tick()
+        timer.timeout.connect(tick)
+        timer.start()
+        self._bring_to_front()
+        box.exec()
+        timer.stop()
+        select_data(self.queuep.when_done, "nothing")  # once only: the next queue doesn't inherit it
+        if fired[0] or box.clickedButton() is now:
+            self._save()
+            save_queue(self.queue)
+            if sleep:
+                power.sleep()
+            else:
+                if self.engine is not None:
+                    self.engine.stop()
+                power.shut_down()
 
     # ---------------------------------------------------------------- shutdown
 
@@ -1194,6 +1303,10 @@ class MainWindow(QMainWindow):
         self.cancel.set()
         self.queue_cancel.set()
         self._save()
+        save_queue(self.queue)  # videos being worked on come back as "stopped", ready to continue
+        power.keep_awake(False)
+        if self.tray is not None:
+            self.tray.hide()
         self.jobp.player.shutdown()
         if self.engine is not None:
             self.engine.stop()
@@ -1238,6 +1351,8 @@ _windows: list["MainWindow"] = []  # keeps the current window alive (rebuilt whe
 
 
 def main() -> None:
+    if sys.platform == "win32":  # its own taskbar button and icon, not Python's
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Subloc.Subloc")  # type: ignore[attr-defined]
     app = QApplication(sys.argv)
     app.setApplicationName("Subloc")
     app.setStyle("Fusion")
@@ -1246,8 +1361,7 @@ def main() -> None:
     if not cfg.setup_done:
         run_setup_flow(None)
     icon = Path(__file__).resolve().parent.parent / "assets" / "icon.png"
-    if icon.exists():
-        app.setWindowIcon(QIcon(str(icon)))
+    app.setWindowIcon(QIcon(str(icon)) if icon.exists() else app_icon())  # also the notifications' icon
     w = MainWindow()
     _windows.append(w)
     w.show()

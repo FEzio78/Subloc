@@ -7,6 +7,7 @@ Two phases so the GPU is used well:
 One failing file never stops the rest.
 """
 
+import json
 import os
 import re
 import threading
@@ -78,6 +79,39 @@ class Item:
     video: Path
     status: str = "waiting"  # waiting | listening | listened | translating | done | skipped | failed | stopped
     error: str = ""
+
+
+WORKING = {"listening", "listened", "translating"}
+
+
+def _queue_file() -> Path:
+    from .config import data_dir
+
+    return data_dir() / "queue.json"
+
+
+def save_queue(items: list[Item]) -> None:
+    """The app's queue survives a restart (queue.json in the data folder)."""
+    path = _queue_file()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    data = [{"video": str(it.video), "status": it.status, "error": it.error} for it in items]
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+    tmp.replace(path)
+
+
+def load_queue() -> list[Item]:
+    """The saved queue. Videos that were being worked on when the app closed come back as 'stopped': starting the
+    queue continues them where they left off (their progress is in their project files)."""
+    try:
+        raw = json.loads(_queue_file().read_text(encoding="utf-8"))
+        items = [Item(Path(d["video"]), str(d.get("status", "waiting")), str(d.get("error", ""))) for d in raw]
+    except (OSError, ValueError, TypeError, KeyError):
+        return []
+    for it in items:
+        if it.status in WORKING:
+            it.status, it.error = "stopped", ""
+    return items
 
 
 class BatchReporter(Reporter):

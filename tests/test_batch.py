@@ -69,3 +69,25 @@ def test_queue_uses_each_files_own_subtitles_when_it_has_them(monkeypatch, tmp_p
     assert [it.status for it in items] == ["done", "done", "skipped"]  # Ep 3 already has Arabic subtitles
     assert calls == [("Ep 2.mkv", True, None),  # only the file without subtitles is listened to
                      ("Ep 1.mkv", False, 0), ("Ep 2.mkv", False, None)]  # fmt: skip
+
+
+def test_queue_is_kept_between_sessions(tmp_path, monkeypatch):
+    import subloc.config
+
+    monkeypatch.setattr(subloc.config, "data_dir", lambda: tmp_path)
+    items = [
+        batch.Item(tmp_path / "Ep 1.mkv", "done"),
+        batch.Item(tmp_path / "حلقة 2.mkv", "translating"),
+        batch.Item(tmp_path / "Ep 3.mkv", "failed", "Couldn't read the sound"),
+        batch.Item(tmp_path / "Ep 4.mkv"),
+    ]
+    batch.save_queue(items)
+    back = batch.load_queue()
+    assert [(it.video.name, it.status, it.error) for it in back] == [
+        ("Ep 1.mkv", "done", ""),
+        ("حلقة 2.mkv", "stopped", ""),  # was being worked on when the app closed: continues on Start
+        ("Ep 3.mkv", "failed", "Couldn't read the sound"),
+        ("Ep 4.mkv", "waiting", ""),
+    ]
+    (tmp_path / "queue.json").write_text("[{", encoding="utf-8")
+    assert batch.load_queue() == []

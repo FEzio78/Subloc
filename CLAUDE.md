@@ -24,10 +24,11 @@ All four checks must pass before committing.
   count + id enum, `src` anchoring, retries, parallel) · `llm` (OpenAI-compatible client) · `engine`
   (built-in llama-server) · `pipeline` (one video, caching) · `batch` · `style`/`burn`/`subtitles` (outputs) ·
   `catalog`/`hardware`/`download`/`config` (setup) · `recent` (Home list) · `library` (folder index, scans) ·
-  `proc` (every process starts here, hidden: no console windows; test enforces) · `cli`.
+  `proc` (every process starts here, hidden: no console windows; test enforces) · `power` · `cli`.
 - UI (`subloc/ui`): `app` (main window/controller) · `pages` (Home, Job, Queue, Settings) · `library_page` ·
   `widgets` · `lines` · `player` (libmpv) · `style_dialog` · `setup` (wizard) · `i18n` (Arabic table) · `theme`.
-- App data while developing (git-ignored): `config.json`, `recent.json`, `library.json`, `thumbs/`, `logs/`.
+- App data while developing (git-ignored): `config.json`, `recent.json`, `library.json`, `queue.json`, `thumbs/`,
+  `logs/`.
 - `subloc/gui.py` is the old pre-redesign window — unused, safe to delete.
 
 ## Rules (hard-won)
@@ -47,7 +48,9 @@ Done: engine quality pass on 11 real videos / 9 languages (0 missing lines), bui
 Setup wizard, new UI + Arabic UI, styles with libass preview, player, burn-in, queue, open-source release.
 Since 0.1.0: no console windows; Home = New project + Recent projects; Library tab (folders scanned once,
 Refresh by hand, optional watching; status per video from subtitle files, tracks inside, Subloc progress);
-dropped folders include subfolders.
+dropped folders include subfolders; the queue is kept between sessions (queue.json), its Stop works,
+the PC is kept awake while working (`power`), a notification when it's done, optional sleep/shut down
+after it (60 s countdown, never remembered between sessions).
 
 ## Next
 

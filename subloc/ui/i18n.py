@@ -87,6 +87,23 @@ AR: dict[str, str] = {
     "Open": "فتح",
     "Show in folder": "إظهار في المجلد",
     "Remove from list": "إزالة من القائمة",
+    # ---- queue: when it's done
+    "When it's done:": "عند الانتهاء:",
+    "Do nothing": "لا شيء",
+    "Sleep": "السكون",
+    "Shut down": "إيقاف التشغيل",
+    "What the PC does once every video in the queue is finished": "ما يفعله الجهاز بعد انتهاء كل مقاطع القائمة",
+    "Remove from queue": "إزالة من قائمة الانتظار",
+    "Queue finished": "انتهت قائمة الانتظار",
+    "{d} videos done · {f} failed": "المكتملة: {d} · المتعذّرة: {f}",
+    "All {d} videos are done.": "اكتملت كل المقاطع ({d}).",
+    "Subloc · queue: {d} of {n} finished": "Subloc · قائمة الانتظار: انتهى {d} من {n}",
+    "The queue is done. The PC will go to sleep in {n} seconds.":
+        "انتهت قائمة الانتظار. سيدخل الجهاز في وضع السكون بعد {n} ثانية.",
+    "The queue is done. The PC will shut down in {n} seconds.": "انتهت قائمة الانتظار. سيُطفأ الجهاز بعد {n} ثانية.",
+    "Sleep now": "السكون الآن",
+    "Shut down now": "إيقاف التشغيل الآن",
+    "Subtitles ready": "الترجمة جاهزة",
     # ---- library
     "Library": "المكتبة",
     "Search": "بحث",

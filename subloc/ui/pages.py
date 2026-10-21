@@ -633,6 +633,8 @@ class QueuePage(QWidget):
     stop = Signal()
     clear = Signal()
     open_item = Signal(int)
+    reveal_item = Signal(int)
+    remove_item = Signal(int)
 
     STATUS: ClassVar[dict[str, tuple[str, str]]] = {
         "waiting": ("Waiting", t.FAINT),
@@ -666,8 +668,13 @@ class QueuePage(QWidget):
         self.start_btn.clicked.connect(self.start.emit)
         self.stop_btn = QPushButton("Stop")
         self.stop_btn.clicked.connect(self.stop.emit)
-        for b in (self.add_btn, self.clear_btn, self.stop_btn, self.start_btn):
-            head.addWidget(b)
+        # Not remembered between sessions on purpose: a forgotten "Shut down" must not end a later run.
+        self.when_done = combo([("nothing", "Do nothing"), ("sleep", "Sleep"), ("shutdown", "Shut down")])
+        self.when_done.setObjectName("boxed")
+        self.when_done.setToolTip("What the PC does once every video in the queue is finished")
+        for w in (self.add_btn, self.clear_btn, label("When it's done:", "muted"), self.when_done, self.stop_btn,
+                  self.start_btn):  # fmt: skip
+            head.addWidget(w)
         lay.addLayout(head)
         hint = label("Every video is listened to first, then all are translated — names stay the same across "
                      "episodes in a folder.", "faint")  # fmt: skip
@@ -680,8 +687,23 @@ class QueuePage(QWidget):
         self.list.setMouseTracking(True)
         self.list.setToolTip("Double-click a finished video to review it")
         self.list.itemDoubleClicked.connect(lambda it: self.open_item.emit(self.list.row(it)))
+        self.list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.list.customContextMenuRequested.connect(self._menu)
         lay.addWidget(self.list, 1)
+        self.running = False
         self.set_running(False)
+
+    def _menu(self, pos: QPoint) -> None:
+        it = self.list.itemAt(pos)
+        if it is None:
+            return
+        row = self.list.row(it)
+        menu = QMenu(self)
+        menu.addAction(tr("Open"), lambda: self.open_item.emit(row))
+        menu.addAction(tr("Show in folder"), lambda: self.reveal_item.emit(row))
+        menu.addSeparator()
+        menu.addAction(tr("Remove from queue"), lambda: self.remove_item.emit(row)).setEnabled(not self.running)
+        menu.exec(self.list.viewport().mapToGlobal(pos))
 
     def set_items(self, items: list[tuple[str, str, str]], progress: dict[int, float] | None = None) -> None:
         """(file name, status, detail); progress: row → 0..1 for the item being worked on."""
@@ -699,7 +721,7 @@ class QueuePage(QWidget):
             it.setData(Qt.ItemDataRole.UserRole, (name, text, color, detail, progress.get(i)))
             it.setToolTip(detail or text)
         self.list.viewport().update()
-        waiting = sum(1 for _, s, _ in items if s == "waiting")
+        waiting = sum(1 for _, s, _ in items if s in ("waiting", "stopped"))  # stopped ones continue on Start
         done = sum(1 for _, s, _ in items if s in ("done", "skipped"))
         self.summary.setText(
             tr("{n} videos · {d} done · {w} waiting", n=len(items), d=done, w=waiting)
@@ -708,6 +730,7 @@ class QueuePage(QWidget):
         )
 
     def set_running(self, running: bool) -> None:
+        self.running = running
         self.start_btn.setVisible(not running)
         self.stop_btn.setVisible(running)
         self.add_btn.setEnabled(not running)
