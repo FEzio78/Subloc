@@ -33,7 +33,7 @@ end of this file). It builds on the following projects. Their licences apply to 
 
 | Component | Licence |
 |---|---|
-| [IBM Plex Sans, Sans Arabic, Mono](https://github.com/IBM/plex) | SIL Open Font License 1.1 (`subloc/assets/fonts/OFL-LICENSE.txt`) |
+| [IBM Plex Sans, Serif, Sans Arabic, Mono](https://github.com/IBM/plex) | SIL Open Font License 1.1 (`subloc/assets/fonts/OFL-LICENSE.txt`) |
 
 ## AI models (downloaded by the user during Setup, not part of Subloc)
 

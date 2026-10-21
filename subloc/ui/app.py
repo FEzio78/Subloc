@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 
 from PySide6.QtCore import QFileSystemWatcher, QObject, QSettings, QStandardPaths, Qt, QTimer, Signal
-from PySide6.QtGui import QIcon, QPixmap
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -54,6 +54,7 @@ from ..style import DEFAULT, PRESETS, SubStyle, write_ass
 from ..subtitles import RTL
 from . import theme as t
 from .i18n import rtl, set_language, tr, translate_tree
+from .intro import play as play_intro
 from .library_page import LibraryPage
 from .lines import Row
 from .pages import HomePage, JobPage, QueuePage, SettingsPage, select_data
@@ -1360,11 +1361,11 @@ def main() -> None:
     apply_language(app, cfg.ui_lang)
     if not cfg.setup_done:
         run_setup_flow(None)
-    icon = Path(__file__).resolve().parent.parent / "assets" / "icon.png"
-    app.setWindowIcon(QIcon(str(icon)) if icon.exists() else app_icon())  # also the notifications' icon
+    app.setWindowIcon(app_icon())  # also the notifications' icon; after apply_language (it needs the fonts)
     w = MainWindow()
     _windows.append(w)
     w.show()
+    play_intro(w)  # Subloc → S → the logo, then the app (a click skips it)
     args = [Path(a) for a in sys.argv[1:] if Path(a).exists()]
     if args:
         QTimer.singleShot(0, lambda: w.open_paths(args))

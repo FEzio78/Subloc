@@ -24,6 +24,7 @@ ERR = "#e5616a"
 SANS = "Segoe UI Variable Text"
 ARABIC = "Segoe UI"
 MONO = "Cascadia Mono"
+SERIF = "Georgia"  # the logo and the name "Subloc"; IBM Plex Serif when bundled
 
 
 def qcolor(hex_rgb: str, alpha: float = 1.0) -> QColor:
@@ -35,7 +36,7 @@ def qcolor(hex_rgb: str, alpha: float = 1.0) -> QColor:
 def load_fonts(arabic_first: bool = False) -> None:
     """Use bundled IBM Plex (Latin + Arabic + Mono share one design) when present; otherwise fall back to
     Windows' Segoe UI / Cascadia Mono, which also cover Arabic."""
-    global SANS, ARABIC, MONO
+    global SANS, ARABIC, MONO, SERIF
     if FONTS_DIR.is_dir():
         for f in FONTS_DIR.glob("*.[ot]tf"):
             QFontDatabase.addApplicationFont(str(f))
@@ -46,6 +47,8 @@ def load_fonts(arabic_first: bool = False) -> None:
         ARABIC = "IBM Plex Sans Arabic"
     if "IBM Plex Mono" in families:
         MONO = "IBM Plex Mono"
+    if "IBM Plex Serif" in families:
+        SERIF = "IBM Plex Serif"
     if arabic_first:  # Plex Sans Arabic also contains Latin, designed to match
         SANS = ARABIC
 
@@ -69,7 +72,7 @@ def stylesheet() -> str:
     QToolTip {{ background: {SURFACE_3}; color: {TEXT}; border: 1px solid {LINE}; padding: 6px 8px; }}
 
     #topbar {{ background: {SURFACE}; border-bottom: 1px solid {LINE}; }}
-    #brand {{ font-size: 12pt; font-weight: 700; }}
+    #brand {{ font-family: "{SERIF}"; font-size: 15pt; font-weight: 400; color: {ACCENT}; }}
     QPushButton#nav {{ background: transparent; border: none; color: {MUTED}; padding: 6px 12px;
                        border-radius: 7px; font-weight: 500; }}
     QPushButton#nav:hover {{ color: {TEXT}; }}

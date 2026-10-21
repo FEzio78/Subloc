@@ -1,7 +1,7 @@
 """Custom-drawn pieces of the interface (see design/mockup.html)."""
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap
+from PySide6.QtGui import QColor, QFont, QFontMetricsF, QIcon, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup,
     QComboBox,
@@ -35,41 +35,56 @@ def label(text: str = "", name: str | None = None) -> QLabel:
 # ---------------------------------------------------------------- brand + top bar
 
 
-class BrandMark(QWidget):
-    """A tiny screen with two subtitle lines in yellow."""
+LOGO_TILE = "#1f2327"
 
-    def __init__(self):
+
+def paint_logo(p: QPainter, x: float, y: float, size: float) -> None:
+    """The logo: a dark rounded tile, a yellow serif S and two subtitle lines under it, the second shorter.
+    Used by the top bar, the setup wizard, the app icon and tools/make_icon.py."""
+    p.save()
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(QColor(LOGO_TILE))
+    p.drawRoundedRect(QRectF(x, y, size, size), size * 0.22, size * 0.22)
+    f = QFont(t.SERIF)
+    f.setWeight(QFont.Weight.Medium)
+    f.setPixelSize(100)
+    f.setPixelSize(max(1, round(100 * size * 0.42 / QFontMetricsF(f).capHeight())))  # the S: 42% of the tile
+    s = QPainterPath()
+    s.addText(0, 0, f, "S")
+    s.translate(x + size / 2 - s.boundingRect().center().x(), y + size * 0.59)  # centred on the letter itself
+    p.setBrush(QColor(t.ACCENT))
+    p.drawPath(s)
+    h = max(1.4, size * 0.065)
+    p.drawRoundedRect(QRectF(x + size * 0.22, y + size * 0.69, size * 0.56, h), h / 2, h / 2)
+    p.drawRoundedRect(QRectF(x + size * 0.33, y + size * 0.795, size * 0.34, h), h / 2, h / 2)
+    p.restore()
+
+
+class BrandMark(QWidget):
+    def __init__(self, size: int = 28):
         super().__init__()
-        self.setFixedSize(26, 18)
+        self.setFixedSize(size, size)
 
     def paintEvent(self, e):
         p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QColor(t.SURFACE_3))
-        p.drawRoundedRect(QRectF(0, 0, 26, 18), 4, 4)
-        p.setBrush(QColor(t.ACCENT))
-        p.drawRoundedRect(QRectF(5, 9, 16, 2.6), 1.3, 1.3)
-        p.drawRoundedRect(QRectF(8, 13, 10, 2.6), 1.3, 1.3)
+        paint_logo(p, 0, 0, self.width())
+
+
+def logo_pixmap(size: int) -> QPixmap:
+    pix = QPixmap(size, size)
+    pix.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pix)
+    paint_logo(p, 0, 0, size)
+    p.end()
+    return pix
 
 
 def app_icon() -> QIcon:
-    """The brand mark as the window / taskbar / notification icon: a dark screen with two yellow subtitle lines."""
+    """Window / taskbar / notification icon, drawn crisp at each size."""
     icon = QIcon()
-    for size in (16, 24, 32, 48, 64, 128, 256):
-        pix = QPixmap(size, size)
-        pix.fill(Qt.GlobalColor.transparent)
-        p = QPainter(pix)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.setPen(Qt.PenStyle.NoPen)
-        s = size / 26
-        p.setBrush(QColor(t.SURFACE_3))
-        p.drawRoundedRect(QRectF(0, 3 * s, 26 * s, 20 * s), 4.5 * s, 4.5 * s)
-        p.setBrush(QColor(t.ACCENT))
-        p.drawRoundedRect(QRectF(4.5 * s, 12 * s, 17 * s, 3.2 * s), 1.6 * s, 1.6 * s)
-        p.drawRoundedRect(QRectF(8 * s, 17 * s, 10 * s, 3.2 * s), 1.6 * s, 1.6 * s)
-        p.end()
-        icon.addPixmap(pix)
+    for size in (16, 20, 24, 32, 40, 48, 64, 128, 256):
+        icon.addPixmap(logo_pixmap(size))
     return icon
 
 
