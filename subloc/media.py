@@ -8,6 +8,7 @@ from pathlib import Path
 
 import numpy as np
 
+from . import proc
 from .errors import MediaError
 
 SAMPLE_RATE = 16000
@@ -101,17 +102,17 @@ def _tracks(streams: list[dict], kind: str) -> list[Track]:
 
 
 def probe(path: Path) -> MediaInfo:
-    proc = subprocess.run(
+    res = proc.run(
         [_bin("ffprobe"), "-v", "error", "-print_format", "json", "-show_format", "-show_streams", str(path)],
         capture_output=True,
     )
     try:
-        data = json.loads(proc.stdout)
+        data = json.loads(res.stdout)
         data["streams"]
     except (ValueError, KeyError) as e:
         raise MediaError(
             "This file couldn't be opened. It may be damaged, still downloading, or not a video.",
-            proc.stderr.decode(errors="replace")[-300:],
+            res.stderr.decode(errors="replace")[-300:],
         ) from e
     video = next((s for s in data["streams"] if s["codec_type"] == "video"), None)
     fps = None
@@ -170,18 +171,18 @@ def read_subtitles(path: Path, track: int) -> str:
     info = probe(path)
     codec = info.subtitles[track].codec
     fmt = ["-c:s", "copy", "-f", "ass"] if codec in ("ass", "ssa") else ["-f", "srt"]
-    proc = subprocess.run(
+    res = proc.run(
         [_bin("ffmpeg"), "-nostdin", "-v", "error", "-i", str(path), "-map", f"0:s:{track}", *fmt, "-"],
         capture_output=True,
     )
-    if proc.returncode and not proc.stdout:
-        raise MediaError("Couldn't read the subtitles inside this file.", proc.stderr.decode(errors="replace")[-300:])
-    return proc.stdout.decode("utf-8", errors="replace")
+    if res.returncode and not res.stdout:
+        raise MediaError("Couldn't read the subtitles inside this file.", res.stderr.decode(errors="replace")[-300:])
+    return res.stdout.decode("utf-8", errors="replace")
 
 
 def iter_frames(path: Path, fps: float, width: int, height: int):
     """Yield (time, gray uint8 HxW frame) sampled at `fps`, scaled to width x height."""
-    proc = subprocess.Popen(
+    ff = proc.popen(
         [
             _bin("ffmpeg"),
             "-nostdin",
@@ -197,26 +198,26 @@ def iter_frames(path: Path, fps: float, width: int, height: int):
         ],
         stdout=subprocess.PIPE,
     )
-    assert proc.stdout is not None
+    assert ff.stdout is not None
     size = width * height
     i = 0
     try:
         while True:
-            buf = proc.stdout.read(size)
+            buf = ff.stdout.read(size)
             if len(buf) < size:
                 break
             # fps filter emits frame i at t = i/fps (plus half-interval rounding); good enough for 4 fps.
             yield i / fps, np.frombuffer(buf, np.uint8).reshape(height, width)
             i += 1
     finally:
-        proc.stdout.close()
-        proc.wait()
+        ff.stdout.close()
+        ff.wait()
 
 
 def grab_frame(path: Path, t: float, width: int | None = None) -> bytes:
     """Return one frame at time t as JPEG bytes (optionally scaled to `width`)."""
     vf = ["-vf", f"scale={width}:-2"] if width else []
-    return subprocess.run(
+    return proc.run(
         [
             _bin("ffmpeg"),
             "-nostdin",
@@ -247,7 +248,7 @@ def _decode(path: Path, track: int, keep_sync: bool) -> subprocess.CompletedProc
     # ffmpeg silently drops broken packets and every later subtitle shifts earlier (a damaged episode
     # decoded to 12 of its 25 minutes and its subtitles came out 3+ minutes early).
     sync = ["-af", "aresample=async=1:first_pts=0"] if keep_sync else []
-    return subprocess.run(
+    return proc.run(
         [_bin("ffmpeg"), "-nostdin", "-v", "error", "-err_detect", "ignore_err", "-i", str(path),
          "-map", f"0:a:{track}", *sync, "-ac", "1", "-ar", str(SAMPLE_RATE), "-f", "s16le", "-"],
         capture_output=True,
@@ -262,14 +263,14 @@ class Audio:
 
 def load_audio(path: Path, track: int = 0) -> Audio:
     """Decode an audio track to 16 kHz mono float32, staying in sync even when the file is damaged."""
-    proc = _decode(path, track, keep_sync=True)
-    if not proc.stdout:
+    res = _decode(path, track, keep_sync=True)
+    if not res.stdout:
         raise MediaError(
-            "Couldn't read the sound from this file. It may be damaged.", proc.stderr.decode(errors="replace")[-300:]
+            "Couldn't read the sound from this file. It may be damaged.", res.stderr.decode(errors="replace")[-300:]
         )
-    samples = np.frombuffer(proc.stdout, np.int16).astype(np.float32) / 32768.0
+    samples = np.frombuffer(res.stdout, np.int16).astype(np.float32) / 32768.0
     missing = 0.0
-    if proc.stderr.strip():
+    if res.stderr.strip():
         # Decoding errors: measure how much was lost by decoding once more without the gap filling.
         raw = len(_decode(path, track, keep_sync=False).stdout) // 2
         missing = max(0.0, 1 - raw / max(len(samples), 1))

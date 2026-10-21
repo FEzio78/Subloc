@@ -12,6 +12,7 @@ import threading
 from collections.abc import Callable
 from pathlib import Path
 
+from . import proc
 from .errors import SublocError
 from .media import _bin, probe
 from .models import Cue
@@ -20,7 +21,7 @@ from .style import SubStyle, write_ass
 
 def _encoders() -> list[list[str]]:
     """Video encoder settings to try, best first."""
-    out = subprocess.run([_bin("ffmpeg"), "-hide_banner", "-encoders"], capture_output=True, text=True).stdout
+    out = proc.run([_bin("ffmpeg"), "-hide_banner", "-encoders"], capture_output=True, text=True).stdout
     options = []
     if "h264_nvenc" in out:
         options.append(["-c:v", "h264_nvenc", "-preset", "p5", "-cq", "21", "-b:v", "0"])
@@ -49,23 +50,23 @@ def burn(
             cmd = [_bin("ffmpeg"), "-nostdin", "-y", "-v", "error", "-progress", "pipe:1", "-i", str(video.resolve()),
                    "-map", "0:v:0", "-map", "0:a:0?", "-vf", "subtitles=burn.ass", *enc, "-pix_fmt", "yuv420p",
                    "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(partial.resolve())]  # fmt: skip
-            proc = subprocess.Popen(cmd, cwd=tmp, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-            assert proc.stdout is not None
-            for line in proc.stdout:
+            ff = proc.popen(cmd, cwd=tmp, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            assert ff.stdout is not None
+            for line in ff.stdout:
                 if cancel.is_set():
-                    proc.kill()
+                    ff.kill()
                     break
                 if line.startswith("out_time_us="):
                     with contextlib.suppress(ValueError):  # "N/A" before the first frame
                         on_progress(min(1.0, int(line.split("=")[1]) / 1e6 / duration))
-            proc.wait()
+            ff.wait()
             if cancel.is_set():
                 partial.unlink(missing_ok=True)
                 raise SublocError("Stopped. No video was saved.")
-            if proc.returncode == 0:
+            if ff.returncode == 0:
                 shutil.move(partial, out)
                 on_progress(1.0)
                 return out
-            last_error = (proc.stderr.read() if proc.stderr else "")[-400:]
+            last_error = (ff.stderr.read() if ff.stderr else "")[-400:]
             partial.unlink(missing_ok=True)  # e.g. NVIDIA encoder unavailable: try the next one
     raise SublocError("Couldn't make the video with subtitles.", last_error)

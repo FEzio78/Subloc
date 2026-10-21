@@ -6,7 +6,6 @@ import contextlib
 import json
 import os
 import shutil
-import subprocess
 import sys
 import threading
 import time
@@ -27,6 +26,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .. import proc
 from ..batch import BatchReporter, Item, find_videos, run_batch
 from ..burn import burn
 from ..catalog import TRANSLATORS
@@ -66,7 +66,7 @@ VLC_PATHS = [pf / "VideoLAN" / "VLC" / "vlc.exe" for pf in PROGRAM_FILES]
 
 def reveal(path: Path) -> None:
     """Open the folder in Explorer with the file selected."""
-    subprocess.Popen(["explorer", "/select,", os.path.normpath(path)])
+    proc.popen(["explorer", "/select,", os.path.normpath(path)])
 
 
 class Bus(QObject):
@@ -748,7 +748,7 @@ class MainWindow(QMainWindow):
         c = next((c for c in self.cues if c.id == cue_id), None)
         player = shutil.which("vlc") or next((str(p) for p in VLC_PATHS if p.exists()), None)
         if c and player and self.video:
-            subprocess.Popen([player, f"--start-time={max(0.0, c.start - 1):.1f}", str(self.video)])
+            proc.popen([player, f"--start-time={max(0.0, c.start - 1):.1f}", str(self.video)])
         else:
             self.open_external()
 

@@ -7,6 +7,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import proc
+
 
 @dataclass
 class Hardware:
@@ -28,8 +30,8 @@ def _nvidia() -> tuple[str | None, float]:
     if not exe:
         return None, 0.0
     try:
-        out = subprocess.run([exe, "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
-                             capture_output=True, text=True, timeout=10, creationflags=_NO_WINDOW).stdout  # fmt: skip
+        out = proc.run([exe, "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
+                       capture_output=True, text=True, timeout=10).stdout  # fmt: skip
         name, mem = out.strip().splitlines()[0].rsplit(",", 1)
         return name.strip(), float(mem) / 1024
     except (OSError, ValueError, IndexError, subprocess.TimeoutExpired):
@@ -40,9 +42,9 @@ def _other_gpus() -> list[str]:
     if sys.platform != "win32":
         return []
     try:
-        out = subprocess.run(
+        out = proc.run(
             ["powershell", "-NoProfile", "-Command", "(Get-CimInstance Win32_VideoController).Name"],
-            capture_output=True, text=True, timeout=15, creationflags=_NO_WINDOW,
+            capture_output=True, text=True, timeout=15,
         ).stdout  # fmt: skip
     except (OSError, subprocess.TimeoutExpired):
         return []
@@ -65,9 +67,6 @@ def _ram_gb() -> float:
     stat.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
     ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(stat))  # type: ignore[attr-defined]
     return stat.ullTotalPhys / 1024**3
-
-
-_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
 def detect() -> Hardware:

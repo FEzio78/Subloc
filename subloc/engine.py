@@ -16,10 +16,9 @@ from pathlib import Path
 
 import httpx
 
+from . import proc
 from .config import data_dir
 from .errors import SublocError
-
-_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
 def _vendor() -> Path:
@@ -103,7 +102,7 @@ class BuiltinEngine:
                    "-ngl", "99" if self.use_gpu else "0", "-c", str(self.ctx * self.parallel),
                    "--parallel", str(self.parallel), "--jinja", "--no-webui"]  # fmt: skip
             log = self.log_path.open("w", encoding="utf-8", errors="replace")
-            self.proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, env=env, creationflags=_NO_WINDOW)
+            self.proc = proc.popen(cmd, stdout=log, stderr=subprocess.STDOUT, env=env)
             deadline = time.time() + timeout
             while time.time() < deadline:
                 if self.proc.poll() is not None:

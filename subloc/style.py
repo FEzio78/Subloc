@@ -5,11 +5,11 @@ and used for burn-in). The preview renders a real frame of the video with libass
 same engine those players use — so what you see is what you get.
 """
 
-import subprocess
 import tempfile
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
+from . import proc
 from .media import _bin
 from .models import Cue
 from .subtitles import RLM, RTL, build_display
@@ -135,14 +135,14 @@ def render_preview(
         Path(tmp, "p.ass").write_text(ass_text(sample, style, True, lang, w, h), encoding="utf-8-sig")
         vf = "subtitles=p.ass" + (f":fontsdir='{fonts_dir.as_posix()}'" if fonts_dir else "")
         vf += f",scale={out_width}:-2"
-        proc = subprocess.run(
+        res = proc.run(
             [_bin("ffmpeg"), "-nostdin", "-v", "error", "-ss", f"{max(at, 0):.3f}", "-i", str(video.resolve()),
              "-frames:v", "1", "-vf", vf, "-f", "image2", "-c:v", "png", "-"],
             capture_output=True, cwd=tmp,
         )  # fmt: skip
-    if not proc.stdout:
-        raise RuntimeError("Couldn't render the preview: " + proc.stderr.decode(errors="replace")[-300:])
-    return proc.stdout
+    if not res.stdout:
+        raise RuntimeError("Couldn't render the preview: " + res.stderr.decode(errors="replace")[-300:])
+    return res.stdout
 
 
 def with_changes(style: SubStyle, **changes) -> SubStyle:
