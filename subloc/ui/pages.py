@@ -1,13 +1,17 @@
-"""The four screens: Home, Job (ready → working → done/review), Queue, Settings."""
+"""The four screens: Home (new project + recent ones), Job (ready → working → done/review), Queue, Settings."""
 
 from collections.abc import Sequence
+from datetime import date, datetime
+from pathlib import Path
 from typing import Any, ClassVar
 
-from PySide6.QtCore import QPoint, QRect, QRectF, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QPainter
+from PySide6.QtCore import QPoint, QPointF, QRect, QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPixmap
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QButtonGroup,
     QComboBox,
+    QFileDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -17,7 +21,6 @@ from PySide6.QtWidgets import (
     QMenu,
     QPushButton,
     QScrollArea,
-    QSizePolicy,
     QStackedWidget,
     QStyle,
     QStyledItemDelegate,
@@ -25,14 +28,17 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..batch import VIDEO_EXT
 from ..langs import LANGS
+from ..recent import Recent, thumb_path
+from ..recent import key as recent_key
 from ..translate import MAX_PARALLEL
 from . import theme as t
 from .i18n import UI_LANGS, rtl, tr
 from .lines import LinesModel, LinesView
 from .player import Player
 from .player import available as player_available
-from .widgets import Arrow, DropFrame, FramePreview, RouteBar, RouteField, StageStrip, Timeline, label
+from .widgets import Arrow, DropStrip, FramePreview, RouteBar, RouteField, StageStrip, Timeline, fmt_time, label
 
 
 def ui_lang() -> str:
@@ -72,19 +78,37 @@ def select_data(c: QComboBox, data) -> None:
 
 
 class HomePage(QWidget):
-    files = Signal(list)
+    """New project on top (drop or choose), the videos opened before underneath."""
+
+    files = Signal(list)  # list[Path]
+    open_recent = Signal(str)
+    reveal_recent = Signal(str)
+    remove_recent = Signal(str)
 
     def __init__(self):
         super().__init__()
         self.setObjectName("page")
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(28, 24, 28, 24)
+        self.setAcceptDrops(True)
+        self.thumbs: dict[str, QPixmap | None] = {}
+        self.live: tuple[str, float] | None = None  # (video key, translated share) of the running job
+
+        outer = QHBoxLayout(self)
+        outer.setContentsMargins(28, 22, 28, 16)
+        holder = QWidget()
+        holder.setMaximumWidth(1040)
+        col = QVBoxLayout(holder)
+        col.setContentsMargins(0, 0, 0, 0)
+        col.setSpacing(12)
         outer.addStretch(1)
-        col = QVBoxLayout()
-        col.setSpacing(18)
-        self.drop = DropFrame()
-        self.drop.files.connect(self.files.emit)
-        col.addWidget(self.drop, 10)
+        outer.addWidget(holder, 30)
+        outer.addStretch(1)
+
+        col.addWidget(label("New project", "title"))
+        self.drop = DropStrip()
+        self.drop.clicked.connect(self.choose_videos)
+        self.drop.video_btn.clicked.connect(self.choose_videos)
+        self.drop.folder_btn.clicked.connect(self.choose_folder)
+        col.addWidget(self.drop)
 
         self.src = combo([(None, "Detect automatically"), ("mixed", "Mixed (changes during video)")]
                          + [(c, LANGS[c]) for c in SOURCE_LANGS])  # fmt: skip
@@ -97,25 +121,109 @@ class HomePage(QWidget):
              RouteField("Translator", self.model)], [3, 0, 3, 2, 5])  # fmt: skip
         col.addWidget(self.route)
 
+        col.addSpacing(14)
+        head = QHBoxLayout()
+        head.addWidget(label("Recent projects", "title"))
+        head.addSpacing(8)
+        self.count = label("", "muted")
+        head.addWidget(self.count)
+        head.addStretch()
+        col.addLayout(head)
+        self.list = QListWidget()
+        self.list.setStyleSheet(
+            f"QListWidget {{ background: {t.SURFACE}; border: 1px solid {t.LINE}; border-radius: 12px; padding: 6px; }}"
+        )
+        self.list.setItemDelegate(RecentDelegate(self))
+        self.list.setMouseTracking(True)
+        self.list.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)  # rows elide to fit
+        self.list.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.list.itemClicked.connect(lambda it: self.open_recent.emit(it.data(Qt.ItemDataRole.UserRole).video))
+        self.list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.list.customContextMenuRequested.connect(self._menu)
+        col.addWidget(self.list, 1)
+        self.empty = label("Videos you open are listed here, so you can come back to them any time.", "faint")
+        self.empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.empty.setMinimumHeight(120)
+        col.addWidget(self.empty, 1)
+
         trust = QHBoxLayout()
         trust.setSpacing(22)
         trust.addStretch()
         for text in ("🔒  Runs on this PC — nothing is uploaded", "Subtitles are saved next to your video",
                      "Stop anytime — it picks up where it left off"):  # fmt: skip
-            trust.addWidget(label(text, "muted"))
+            trust.addWidget(label(text, "faint"))
         trust.addStretch()
         col.addLayout(trust)
+        self.set_recent([])
 
-        wrap = QHBoxLayout()
-        wrap.addStretch(1)
-        holder = QWidget()
-        holder.setLayout(col)
-        holder.setMaximumWidth(980)
-        holder.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        wrap.addWidget(holder, 20)
-        wrap.addStretch(1)
-        outer.addLayout(wrap, 10)
-        outer.addStretch(1)
+    # ---------- choosing / dropping
+
+    def choose_videos(self) -> None:
+        exts = " ".join(f"*{x}" for x in sorted(VIDEO_EXT))
+        paths, _ = QFileDialog.getOpenFileNames(self, tr("Choose videos"), "", f"Videos ({exts});;All files (*)")
+        if paths:
+            self.files.emit([Path(x) for x in paths])
+
+    def choose_folder(self) -> None:
+        folder = QFileDialog.getExistingDirectory(self, tr("Choose a folder"))
+        if folder:
+            self.files.emit([Path(folder)])
+
+    def dragEnterEvent(self, e):
+        if e.mimeData().hasUrls():
+            e.acceptProposedAction()
+            self.drop.set_hover(True)
+
+    def dragLeaveEvent(self, e):
+        self.drop.set_hover(False)
+
+    def dropEvent(self, e):
+        self.drop.set_hover(False)
+        paths = [Path(u.toLocalFile()) for u in e.mimeData().urls() if u.isLocalFile()]
+        if paths:
+            self.files.emit(paths)
+
+    # ---------- recent projects
+
+    def set_recent(self, items: list[Recent]) -> None:
+        self.list.clear()
+        for r in items:
+            it = QListWidgetItem()
+            it.setData(Qt.ItemDataRole.UserRole, r)
+            it.setToolTip(r.video)
+            self.list.addItem(it)
+        self.list.setVisible(bool(items))
+        self.empty.setVisible(not items)
+        self.count.setText(tr("{n} videos", n=len(items)) if items else "")
+
+    def thumb(self, video: str) -> QPixmap | None:
+        k = recent_key(video)
+        if k not in self.thumbs:
+            path = thumb_path(video)
+            self.thumbs[k] = QPixmap(str(path)) if path.exists() else None
+        return self.thumbs[k]
+
+    def thumb_ready(self, video: str) -> None:
+        self.thumbs.pop(recent_key(video), None)
+        self.list.viewport().update()
+
+    def set_live(self, video: str | None, share: float = 0.0) -> None:
+        """Show the running job's progress on its row (video None = nothing running)."""
+        self.live = (recent_key(video), share) if video else None
+        self.list.viewport().update()
+
+    def _menu(self, pos: QPoint) -> None:
+        it = self.list.itemAt(pos)
+        if it is None:
+            return
+        r: Recent = it.data(Qt.ItemDataRole.UserRole)
+        menu = QMenu(self)
+        menu.addAction(tr("Open"), lambda: self.open_recent.emit(r.video))
+        menu.addAction(tr("Show in folder"), lambda: self.reveal_recent.emit(r.video)).setEnabled(r.path.exists())
+        menu.addSeparator()
+        menu.addAction(tr("Remove from list"), lambda: self.remove_recent.emit(r.video))
+        menu.exec(self.list.viewport().mapToGlobal(pos))
 
     def set_models(self, models: list[tuple[str, str]], loaded: str | None, saved: str | None) -> None:
         self.model.blockSignals(True)
@@ -128,6 +236,153 @@ class HomePage(QWidget):
             self.model.addItem(text, mid)
         select_data(self.model, saved)
         self.model.blockSignals(False)
+
+
+def _when(ts: float) -> str:
+    if not ts:
+        return ""
+    d = datetime.fromtimestamp(ts)
+    days = (date.today() - d.date()).days
+    if days == 0:
+        return tr("Today {t}", t=d.strftime("%H:%M"))
+    if days == 1:
+        return tr("Yesterday {t}", t=d.strftime("%H:%M"))
+    return "\u2066" + d.strftime("%Y-%m-%d") + "\u2069"  # isolated: Arabic next to it would flip the parts
+
+
+def folder_label(video: Path) -> str:
+    """The folder line under a recent project's name (tools/make_screenshots.py swaps in demo folders)."""
+    return str(video.parent)
+
+
+def _text_dir(text: str) -> Qt.LayoutDirection:
+    """File names keep their own direction: an English name stays left-to-right in the Arabic interface."""
+    rtl_text = any("֐" <= ch <= "ࣿ" for ch in text)
+    return Qt.LayoutDirection.RightToLeft if rtl_text else Qt.LayoutDirection.LeftToRight
+
+
+class RecentDelegate(QStyledItemDelegate):
+    """A recent project: thumbnail (with how much is translated along its bottom), name, folder, status, details."""
+
+    STATUS: ClassVar[dict[str, tuple[str, str]]] = {
+        "done": ("Done", t.OK),
+        "partial": ("{p}% translated", t.ACCENT),
+        "heard": ("Not translated yet", t.MUTED),
+        "new": ("Not started", t.FAINT),
+        "missing": ("File not found", t.ERR),
+        "live": ("Working…", t.ACCENT),
+    }
+
+    def __init__(self, home: "HomePage"):
+        super().__init__(home)
+        self.home = home
+
+    def sizeHint(self, option, index) -> QSize:
+        return QSize(0, 84)  # full width comes from the list
+
+    def paint(self, p: QPainter, option, index) -> None:
+        item: Recent | None = index.data(Qt.ItemDataRole.UserRole)
+        if item is None:
+            return
+        r = QRectF(option.rect.adjusted(6, 3, -6, -3))
+        mirrored = option.widget is not None and option.widget.isRightToLeft()
+
+        def m(rect: QRectF) -> QRectF:  # same place, measured from the other side in Arabic
+            if not mirrored:
+                return rect
+            return QRectF(r.left() + r.right() - rect.right(), rect.top(), rect.width(), rect.height())
+
+        left, right = Qt.AlignmentFlag.AlignLeft, Qt.AlignmentFlag.AlignRight
+        lead, trail = (right, left) if mirrored else (left, right)
+        absolute = Qt.AlignmentFlag.AlignAbsolute | Qt.AlignmentFlag.AlignVCenter
+
+        status = item.status()
+        share = item.progress
+        live = self.home.live
+        if live and live[0] == recent_key(item.video):
+            status, share = "live", live[1]
+        text, color = self.STATUS[status]
+        text = tr(text, p=round(share * 100)) if status == "partial" else tr(text)
+
+        p.save()
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        if option.state & QStyle.StateFlag.State_MouseOver:
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor(t.SURFACE_2))
+            p.drawRoundedRect(r, 8, 8)
+        faded = status == "missing"
+        if faded:
+            p.setOpacity(0.5)
+
+        # thumbnail, cropped to 16:9
+        thumb = m(QRectF(r.left() + 10, r.top() + (r.height() - 63) / 2, 112, 63))
+        clip = QPainterPath()
+        clip.addRoundedRect(thumb, 6, 6)
+        p.save()
+        p.setClipPath(clip)
+        p.fillRect(thumb, QColor("#16191d"))
+        pix = self.home.thumb(item.video)
+        if pix and not pix.isNull():
+            pw, ph = pix.width(), pix.height()
+            aspect = thumb.width() / thumb.height()
+            src = (QRectF((pw - ph * aspect) / 2, 0, ph * aspect, ph) if pw / ph > aspect
+                   else QRectF(0, (ph - pw / aspect) / 2, pw, pw / aspect))  # fmt: skip
+            p.drawPixmap(thumb, pix, src)
+        else:  # two subtitle lines, like the app icon
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor(t.SURFACE_3))
+            c = thumb.center()
+            p.drawRoundedRect(QRectF(c.x() - 26, c.y() + 6, 52, 5), 2.5, 2.5)
+            p.drawRoundedRect(QRectF(c.x() - 16, c.y() + 15, 32, 5), 2.5, 2.5)
+        if status in ("partial", "done", "live") and share > 0:
+            bar = QRectF(thumb.left(), thumb.bottom() - 4, thumb.width(), 4)
+            p.fillRect(bar, QColor(0, 0, 0, 150))
+            fw = bar.width() * share  # fills from the reading side
+            fill = QRectF(bar.right() - fw if mirrored else bar.left(), bar.top(), fw, bar.height())
+            p.fillRect(fill, QColor(t.OK if status == "done" else t.ACCENT))
+        p.restore()
+
+        # status pill and details on the trailing side
+        p.setFont(t.font(8.5, QFont.Weight.Medium))
+        pw = p.fontMetrics().horizontalAdvance(text) + 18
+        pill = m(QRectF(r.right() - 14 - pw, r.top() + 15, pw, 22))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(t.qcolor(color, 0.14))
+        p.drawRoundedRect(pill, 11, 11)
+        p.setPen(QColor(color))
+        p.drawText(pill, Qt.AlignmentFlag.AlignCenter, text)
+
+        details = [tr(LANGS.get(item.target or "", item.target or ""))] if item.target and item.lines else []
+        if item.duration:
+            details.append(fmt_time(item.duration))
+        details.append(_when(item.opened))
+        side_w = 260.0
+        p.setFont(t.font(9))
+        p.setPen(QColor(t.MUTED))
+        if mirrored:
+            p.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
+        p.drawText(m(QRectF(r.right() - 14 - side_w, r.top() + 44, side_w, 20)), trail | absolute,
+                   "  ·  ".join(d for d in details if d))  # fmt: skip
+
+        # name and folder on the leading side
+        x = r.left() + 10 + 112 + 16
+        w = max(60.0, r.right() - 14 - side_w - 12 - x)
+        name, folder = item.path.name, folder_label(item.path)
+        p.setFont(t.font(10.5, QFont.Weight.Medium))
+        p.setPen(QColor(t.TEXT))
+        p.setLayoutDirection(_text_dir(name))
+        p.drawText(m(QRectF(x, r.top() + 15, w, 22)), lead | absolute,
+                   p.fontMetrics().elidedText(name, Qt.TextElideMode.ElideMiddle, int(w)))  # fmt: skip
+        p.setFont(t.font(9))
+        p.setPen(QColor(t.FAINT))
+        p.setLayoutDirection(_text_dir(folder))
+        p.drawText(m(QRectF(x, r.top() + 42, w, 20)), lead | absolute,
+                   p.fontMetrics().elidedText(folder, Qt.TextElideMode.ElideMiddle, int(w)))  # fmt: skip
+        p.setOpacity(1.0)
+        p.setPen(QColor("#1f2226"))
+        p.drawLine(QPointF(r.left() + 8, r.bottom()), QPointF(r.right() - 8, r.bottom()))
+        p.restore()
 
 
 # ---------------------------------------------------------------- Job

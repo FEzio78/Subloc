@@ -79,6 +79,7 @@ def stylesheet() -> str:
     #fieldLabel {{ color: {MUTED}; font-size: 8.5pt; }}
     #title {{ font-size: 13pt; font-weight: 600; }}
     #hero {{ font-size: 19pt; font-weight: 600; }}
+    #dropTitle {{ color: {ACCENT}; font-size: 14pt; font-weight: 600; }}
     #mono {{ font-family: "{MONO}"; color: {MUTED}; font-size: 9pt; }}
     #warning {{ color: {WARN}; }}
     #error {{ color: {ERR}; }}

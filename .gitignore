@@ -37,4 +37,7 @@ vendor/
 # App data while developing (installed app keeps it in %LOCALAPPDATA%/Subloc)
 logs/
 config.json
+recent.json
+# Home-screen thumbnails: frames of the user's videos
+thumbs/
 *.part

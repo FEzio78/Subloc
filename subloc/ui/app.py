@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .. import proc
+from .. import proc, recent
 from ..batch import BatchReporter, Item, find_videos, run_batch
 from ..burn import burn
 from ..catalog import TRANSLATORS
@@ -86,6 +86,7 @@ class Bus(QObject):
     queue_done = Signal()
     burn_progress = Signal(float)
     burn_done = Signal(str, str)
+    thumb = Signal(str, float)  # video, duration (Home list thumbnail is ready)
 
 
 def _rows(cues: list[Cue]) -> list[Row]:
@@ -116,6 +117,9 @@ class MainWindow(QMainWindow):
         self.sub_style = self._load_style()  # not .style: that would hide QWidget.style()
         self.cfg = Config.load()
         self.engine: BuiltinEngine | None = None
+        self.recent = recent.load()
+        self._thumb_tried: set[str] = set()
+        self._thumb_job: threading.Thread | None = None
 
         root = QWidget()
         lay = QVBoxLayout(root)
@@ -133,6 +137,7 @@ class MainWindow(QMainWindow):
 
         self._wire()
         self._restore()
+        self._show_recent()
         self._make_engine()  # after the screens exist: it updates the Settings page
         translate_tree(self)
         self.engine_timer = QTimer(self, interval=12000)
@@ -158,8 +163,12 @@ class MainWindow(QMainWindow):
         b.queue_done.connect(self._on_queue_done)
         b.burn_progress.connect(self._on_burn_progress)
         b.burn_done.connect(self._on_burn_done)
+        b.thumb.connect(self._on_thumb)
 
         self.home.files.connect(self.open_paths)
+        self.home.open_recent.connect(self.open_recent)
+        self.home.reveal_recent.connect(lambda v: reveal(Path(v)))
+        self.home.remove_recent.connect(self.forget_recent)
         for c in (self.home.src, self.home.tgt, self.home.speech, self.home.model):
             c.currentIndexChanged.connect(self._save)
         j = self.jobp
@@ -196,11 +205,90 @@ class MainWindow(QMainWindow):
         s.language.connect(self.change_language)
 
     def show_page(self, key: str) -> None:
-        """'New' shows the running job if there is one, otherwise the drop screen for the next video."""
-        pages = {"new": self.jobp if self.job is not None else self.home, "queue": self.queuep,
-                 "settings": self.settingsp}  # fmt: skip
+        """Home (new project + recent ones; the running video is listed first), Queue or Settings."""
+        pages = {"home": self.home, "queue": self.queuep, "settings": self.settingsp}
+        if key == "home":
+            self._show_recent()
         self.stack.setCurrentWidget(pages[key])
         self.top.select(key)
+
+    # ---------------------------------------------------------------- recent projects
+
+    def _show_recent(self) -> None:
+        """Refresh summaries whose project file changed (edits, CLI runs), then redraw the list."""
+        changed = [r for r in self.recent if recent.summarize(r)]
+        if changed:
+            recent.save(self.recent)
+        self.home.set_recent(self.recent)
+        self._make_thumbs()
+
+    def _remember(self, video: Path, duration: float = 0.0) -> None:
+        self.recent = recent.touch(self.recent, video, duration)
+        recent.save(self.recent)
+        self.home.set_recent(self.recent)
+        self._make_thumbs()
+
+    def _make_thumbs(self) -> None:
+        """Grab a frame for list rows without a thumbnail, one video after another, off the UI thread."""
+        if self._thumb_job is not None:
+            return
+        todo = [Path(r.video) for r in self.recent if recent.key(r.video) not in self._thumb_tried
+                and not recent.thumb_path(r.video).exists() and r.path.exists()]  # fmt: skip
+        if not todo:
+            return
+        self._thumb_tried.update(recent.key(v) for v in todo)
+        bus = self.bus
+
+        def work() -> None:
+            for v in todo:
+                try:
+                    _, duration = recent.make_thumb(v)
+                    bus.thumb.emit(str(v), duration)
+                except Exception:
+                    pass  # unreadable file: the row keeps its placeholder
+            bus.thumb.emit("", 0.0)  # finished
+
+        self._thumb_job = threading.Thread(target=work, daemon=True)
+        self._thumb_job.start()
+
+    def _on_thumb(self, video: str, duration: float) -> None:
+        if not video:
+            self._thumb_job = None
+            self._make_thumbs()  # videos added while it was working
+            return
+        item = recent.find(self.recent, video)
+        if item and duration and not item.duration:
+            item.duration = duration
+            recent.save(self.recent)
+        self.home.thumb_ready(video)
+
+    def open_recent(self, video: str) -> None:
+        path = Path(video)
+        if self.job is not None and self.video and recent.key(self.video) == recent.key(path):
+            self.stack.setCurrentWidget(self.jobp)  # back to the video being worked on
+            return
+        if path.exists():
+            self.open_video(path)
+            return
+        box = QMessageBox(QMessageBox.Icon.Warning, tr("File not found"),
+                          tr("{name} was moved, renamed or deleted.", name=path.name), parent=self)  # fmt: skip
+        find = box.addButton(tr("Find it…"), QMessageBox.ButtonRole.AcceptRole)
+        forget = box.addButton(tr("Remove from list"), QMessageBox.ButtonRole.DestructiveRole)
+        box.addButton(tr("Cancel"), QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        if box.clickedButton() is forget:
+            self.forget_recent(video)
+        elif box.clickedButton() is find:
+            start = next((str(d) for d in path.parents if d.exists()), "")
+            found, _ = QFileDialog.getOpenFileName(self, tr("Find {name}", name=path.name), start)
+            if found:
+                self.recent = recent.remove(self.recent, video)
+                self.open_video(Path(found))
+
+    def forget_recent(self, video: str) -> None:
+        self.recent = recent.remove(self.recent, video)
+        recent.save(self.recent)
+        self.home.set_recent(self.recent)
 
     # ---------------------------------------------------------------- settings
 
@@ -330,6 +418,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, tr("Can't open this file"), str(e))
             return
         self.video, self.info = video.resolve(), info
+        self._remember(self.video, info.duration)
         j = self.jobp
         j.player.pause()
         j.display.setCurrentWidget(j.preview)
@@ -373,7 +462,7 @@ class MainWindow(QMainWindow):
             self._update_timeline()
             j.set_state("ready")
         self.stack.setCurrentWidget(j)
-        self.top.select("new")
+        self.top.select("home")
         self.preview_at(min(info.duration * 0.1, 60.0))
 
     def _load_project(self) -> Project | None:
@@ -478,6 +567,8 @@ class MainWindow(QMainWindow):
         self.cues = cues
         self._show_cues(cues)
         done = [c for c in cues if c.translation]
+        if self.job is not None and self.video:
+            self.home.set_live(str(self.video), len(done) / len(cues) if cues else 0.0)
         if done and time.time() - self.last_frame_at > 2.5:  # follow the newest translated line
             self.last_frame_at = time.time()
             self._set_now(done[-1])
@@ -500,8 +591,13 @@ class MainWindow(QMainWindow):
         right = f"{len(done)} / {n}" if n else ""
         self.jobp.timeline.set_data(dur, heard, done, right)
 
-    def _on_finished(self, outputs: list) -> None:
+    def _job_ended(self) -> None:
         self.job = None
+        self.home.set_live(None)
+        self._show_recent()  # the project file changed: new status on its row
+
+    def _on_finished(self, outputs: list) -> None:
+        self._job_ended()
         proj = self._load_project()
         if proj:
             self.cues = proj.cues
@@ -534,7 +630,7 @@ class MainWindow(QMainWindow):
         j.eta.setText("")
 
     def _on_failed(self, msg: str) -> None:
-        self.job = None
+        self._job_ended()
         j = self.jobp
         j.set_state("failed")
         j.banner.setText(("" if msg.startswith("Stopped") else "✕  ") + msg)
@@ -897,6 +993,8 @@ class MainWindow(QMainWindow):
         self.queue_progress.pop(i, None)
         self.queue[i].status, self.queue[i].error = status, error
         self._refresh_queue()
+        if status in ("done", "failed", "stopped"):  # worked on: list it on Home
+            self._remember(self.queue[i].video)
 
     def _on_queue_done(self) -> None:
         self.queue_job = None

@@ -1,13 +1,10 @@
 """Custom-drawn pieces of the interface (see design/mockup.html)."""
 
-from pathlib import Path
-
-from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
+from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup,
     QComboBox,
-    QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -19,8 +16,6 @@ from PySide6.QtWidgets import (
 
 from . import theme as t
 from .i18n import rtl, tr
-
-VIDEO_EXT = {".mp4", ".mkv", ".avi", ".mov", ".webm", ".m4v", ".ts", ".flv", ".wmv", ".mp3", ".wav", ".m4a"}
 
 
 def fmt_time(sec: float) -> str:
@@ -79,7 +74,7 @@ class StatusDot(QWidget):
 
 
 class TopBar(QFrame):
-    navigate = Signal(str)  # "new" | "queue" | "settings"
+    navigate = Signal(str)  # "home" | "queue" | "settings"
 
     def __init__(self):
         super().__init__()
@@ -93,7 +88,7 @@ class TopBar(QFrame):
         lay.addSpacing(18)
         self.group = QButtonGroup(self)
         self.buttons: dict[str, QPushButton] = {}
-        for key, text in (("new", "New"), ("queue", "Queue"), ("settings", "Settings")):
+        for key, text in (("home", "Home"), ("queue", "Queue"), ("settings", "Settings")):
             b = QPushButton(tr(text))
             b.setObjectName("nav")
             b.setCheckable(True)
@@ -102,7 +97,7 @@ class TopBar(QFrame):
             self.group.addButton(b)
             self.buttons[key] = b
             lay.addWidget(b)
-        self.buttons["new"].setChecked(True)
+        self.buttons["home"].setChecked(True)
         lay.addStretch()
         self.dot = StatusDot()
         self.engine = label(tr("Checking translator…"), "engine")
@@ -120,120 +115,77 @@ class TopBar(QFrame):
         self.dot.set_color(t.OK if ok else (t.FAINT if ok is None else t.ERR))
 
 
-# ---------------------------------------------------------------- drop frame
+# ---------------------------------------------------------------- new project (drop strip)
 
 
-class DropFrame(QWidget):
-    """A 16:9 'screen' with letterbox bars; the call to action sits where a subtitle would."""
-
-    files = Signal(list)  # list[Path]
+class UploadIcon(QWidget):
+    """Rounded box with an arrow going up."""
 
     def __init__(self):
         super().__init__()
-        self.setAcceptDrops(True)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setMinimumHeight(260)
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.setFixedSize(54, 54)
         self.hover = False
-        self.title = tr("Drop a video here")
-        self.sub = tr("or click to choose a file — a whole folder works too")
-
-    def sizeHint(self) -> QSize:
-        return QSize(900, 450)
-
-    def set_text(self, title: str, sub: str) -> None:
-        self.title, self.sub = title, sub
-        self.update()
-
-    def _frame_rect(self) -> QRectF:
-        r = QRectF(self.rect()).adjusted(1, 1, -1, -1)
-        w = min(r.width(), r.height() * 2.0)
-        h = w / 2.0
-        return QRectF(r.center().x() - w / 2, r.center().y() - h / 2, w, h)
 
     def paintEvent(self, e):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        r = self._frame_rect()
-        path = QPainterPath()
-        path.addRoundedRect(r, 14, 14)
-        p.setClipPath(path)
-        p.fillRect(r, QColor("#111316"))
-        glow = QColor("#1d2126")
-        for i in range(10):  # soft top light
-            glow.setAlphaF(0.08)
-            p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(glow)
-            p.drawEllipse(
-                QPointF(r.center().x(), r.top()), r.width() * (0.3 + i * 0.05), r.height() * (0.25 + i * 0.05)
-            )
-        bar = r.height() * 0.09
-        p.fillRect(QRectF(r.left(), r.top(), r.width(), bar), QColor("#07080a"))
-        p.fillRect(QRectF(r.left(), r.bottom() - bar, r.width(), bar), QColor("#07080a"))
-        p.setClipping(False)
-        pen = QPen(QColor(t.ACCENT if self.hover else "#3a3f46"), 1.5, Qt.PenStyle.DashLine)
-        p.setPen(pen)
-        p.setBrush(Qt.BrushStyle.NoBrush)
-        p.drawRoundedRect(r, 14, 14)
-
-        # formats, top-right inside the picture
-        p.setPen(QColor(t.FAINT))
-        p.setFont(t.font(8, family=t.MONO))
-        corner = Qt.AlignmentFlag.AlignLeft if self.isRightToLeft() else Qt.AlignmentFlag.AlignRight
-        p.drawText(r.adjusted(16, bar + 10, -16, 0), corner | Qt.AlignmentFlag.AlignTop,
-                   "MP4 · MKV · AVI · MOV · WEBM")  # fmt: skip
-
-        # upload icon
-        c = QPointF(r.center().x(), r.top() + r.height() * 0.36)
-        box = QRectF(c.x() - 30, c.y() - 30, 60, 60)
+        c = QPointF(27, 27)
         p.setPen(QPen(QColor(t.ACCENT if self.hover else "#3a3f46"), 1.5))
-        p.drawRoundedRect(box, 15, 15)
-        p.setPen(QPen(QColor(t.MUTED), 1.8, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
-        p.drawLine(QPointF(c.x(), c.y() + 6), QPointF(c.x(), c.y() - 9))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawRoundedRect(QRectF(1, 1, 52, 52), 14, 14)
+        color = t.ACCENT if self.hover else t.MUTED
+        p.setPen(QPen(QColor(color), 1.8, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+        p.drawLine(QPointF(c.x(), c.y() + 5), QPointF(c.x(), c.y() - 9))
         p.drawPolyline([QPointF(c.x() - 6, c.y() - 3), QPointF(c.x(), c.y() - 9), QPointF(c.x() + 6, c.y() - 3)])
-        p.drawPolyline([QPointF(c.x() - 11, c.y() + 4), QPointF(c.x() - 11, c.y() + 10),
-                        QPointF(c.x() + 11, c.y() + 10), QPointF(c.x() + 11, c.y() + 4)])  # fmt: skip
+        p.drawPolyline([QPointF(c.x() - 11, c.y() + 3), QPointF(c.x() - 11, c.y() + 9),
+                        QPointF(c.x() + 11, c.y() + 9), QPointF(c.x() + 11, c.y() + 3)])  # fmt: skip
 
-        # the "subtitle"
-        sub_y = r.bottom() - bar - r.height() * 0.2
-        self._outlined(p, QRectF(r.left() + 20, sub_y - 22, r.width() - 40, 44), self.title,
-                       t.font(19, QFont.Weight.DemiBold), QColor(t.ACCENT))  # fmt: skip
-        p.setFont(t.font(10))
-        p.setPen(QColor("#c9ccd0"))
-        p.drawText(QRectF(r.left() + 20, sub_y + 22, r.width() - 40, 24), Qt.AlignmentFlag.AlignCenter, self.sub)
 
-    @staticmethod
-    def _outlined(p: QPainter, rect: QRectF, text: str, f: QFont, color: QColor) -> None:
-        p.setFont(f)
-        p.setPen(QColor(0, 0, 0, 200))
-        p.drawText(rect.translated(0, 2), Qt.AlignmentFlag.AlignCenter, text)
-        p.setPen(color)
-        p.drawText(rect, Qt.AlignmentFlag.AlignCenter, text)
+class DropStrip(QFrame):
+    """'New project': where to drop a video or a folder (the whole Home page accepts drops), or click to choose."""
+
+    clicked = Signal()
+
+    def __init__(self):
+        super().__init__()
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setMinimumHeight(104)
+        self.hover = False
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(22, 16, 18, 16)
+        lay.setSpacing(16)
+        self.icon = UploadIcon()
+        lay.addWidget(self.icon)
+        col = QVBoxLayout()
+        col.setSpacing(3)
+        col.addStretch()
+        col.addWidget(label("Drop a video or a folder here", "dropTitle"))
+        col.addWidget(label("or click to choose · MP4 · MKV · AVI · MOV · WEBM", "muted"))
+        col.addStretch()
+        lay.addLayout(col, 1)
+        self.folder_btn = QPushButton("Choose folder…")
+        self.video_btn = QPushButton("Choose video…")
+        self.video_btn.setObjectName("primary")
+        for b in (self.folder_btn, self.video_btn):
+            b.setCursor(Qt.CursorShape.PointingHandCursor)
+            lay.addWidget(b)
+
+    def set_hover(self, on: bool) -> None:
+        self.hover = self.icon.hover = on
+        self.icon.update()
+        self.update()
+
+    def paintEvent(self, e):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        r = QRectF(self.rect()).adjusted(1, 1, -1, -1)
+        p.setBrush(t.qcolor(t.ACCENT, 0.05) if self.hover else QColor("#111316"))
+        p.setPen(QPen(QColor(t.ACCENT if self.hover else "#3a3f46"), 1.5, Qt.PenStyle.DashLine))
+        p.drawRoundedRect(r, 12, 12)
 
     def mousePressEvent(self, e):
-        if e.button() != Qt.MouseButton.LeftButton:
-            return
-        exts = " ".join(f"*{x}" for x in sorted(VIDEO_EXT))
-        paths, _ = QFileDialog.getOpenFileNames(self, tr("Choose videos"), "", f"Videos ({exts});;All files (*)")
-        if paths:
-            self.files.emit([Path(x) for x in paths])
-
-    def dragEnterEvent(self, e):
-        if e.mimeData().hasUrls():
-            e.acceptProposedAction()
-            self.hover = True
-            self.update()
-
-    def dragLeaveEvent(self, e):
-        self.hover = False
-        self.update()
-
-    def dropEvent(self, e):
-        self.hover = False
-        self.update()
-        paths = [Path(u.toLocalFile()) for u in e.mimeData().urls() if u.isLocalFile()]
-        if paths:
-            self.files.emit(paths)
+        if e.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit()
 
 
 # ---------------------------------------------------------------- route bar

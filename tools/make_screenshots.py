@@ -56,6 +56,49 @@ def make_demo(folder: Path) -> Path:
     return video
 
 
+def make_recent(folder: Path, main_video: Path) -> None:
+    """Invented earlier projects for the Home list, in every state. The list lives in the temp folder, so the
+    developer's own recent.json (and its thumbnails) never appears in a screenshot."""
+    import time
+
+    import subloc.ui.pages as pages
+    from subloc import recent
+    from subloc.models import Cue, Project
+
+    data = folder / "data"
+    recent.data_dir = lambda: data  # type: ignore[assignment]
+    # Show tidy library folders instead of the temp folder (whose path holds the developer's user name).
+    pages.folder_label = lambda v: "D:\\Series\\" + v.stem.split(" - ")[0] if " - " in v.stem else "D:\\Videos"
+    demos = [  # name, colours, translated share (None = no project yet), opened hours ago
+        ("The Long Road - Episode 4.mkv", "0x2f3d4a:c1=0x101418:c2=0x5a4632", 0.4, 0.3),
+        ("Night Market - Episode 1.mkv", "0x4a2f3a:c1=0x16101a:c2=0x2f4a46", 0.0, 26),
+        ("Summer Lecture.mp4", "0x3a4a2f:c1=0x141810:c2=0x46324a", None, 75),
+    ]
+    items: list = []
+    for name, colours, share, hours in demos:
+        v = folder / name
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i",
+                        f"gradients=s=1280x720:c0={colours}:n=3:speed=0.02:d=40", "-t", "40", "-c:v", "libx264",
+                        "-preset", "ultrafast", "-pix_fmt", "yuv420p", str(v)], check=True)  # fmt: skip
+        if share is not None:
+            n = len(LINES)
+            cues = [Cue(id=i, start=i * 3.0, end=i * 3.0 + 2, text=en, translation=ar if i <= n * share else None)
+                    for i, (en, ar) in enumerate(LINES, 1)]  # fmt: skip
+            Project(video=str(v), language="en", cues=cues, target_language="ar").save(
+                v.with_name(v.stem + ".subloc.json")
+            )
+        items = recent.touch(items, v)
+        items[0].opened = time.time() - hours * 3600
+    items = recent.touch(items, main_video)
+    items[0].opened = time.time() - 2 * 3600
+    items.append(recent.Recent(str(folder / "Old Trailer.mp4"), opened=time.time() - 9 * 86400))  # moved away
+    items.sort(key=lambda r: -r.opened)
+    for r in items:
+        if r.path.exists():
+            _, r.duration = recent.make_thumb(r.path)
+    recent.save(items)
+
+
 def main() -> None:
     import subloc.ui.app as A
     from subloc.config import Config
@@ -66,6 +109,7 @@ def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     tmp = Path(tempfile.mkdtemp(prefix="subloc-shots-"))
     video = make_demo(tmp)
+    make_recent(tmp, video)
     A.Config.load = classmethod(lambda cls: Config(setup_done=True))  # don't touch the developer's settings
     # Show the translator as ready (the real check would depend on whatever runs on this PC).
     A.MainWindow.check_engine = lambda self: self.top.set_engine(  # type: ignore[method-assign]
