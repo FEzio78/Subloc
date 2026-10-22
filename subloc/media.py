@@ -8,14 +8,16 @@ from pathlib import Path
 
 import numpy as np
 
-from . import proc
+from . import VENDOR, proc
 from .errors import MediaError
 
 SAMPLE_RATE = 16000
 
 
 def _bin(name: str) -> str:
-    path = shutil.which(name)
+    """ffmpeg / ffprobe: the copy that comes with Subloc, else the one on PATH."""
+    bundled = VENDOR / "ffmpeg" / f"{name}.exe"
+    path = str(bundled) if bundled.exists() else shutil.which(name)
     if not path:
         raise MediaError(
             f"{name} is missing. Subloc needs ffmpeg to read videos — reinstall Subloc, "

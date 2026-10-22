@@ -7,9 +7,24 @@ aren't uploaded anywhere by Subloc.
 
 ## Set it up
 
-Replace `C:\path\to\Subloc` with the folder where Subloc is.
+With the installed app, the command is `subloc-cli.exe` in Subloc's folder (usually
+`%LOCALAPPDATA%\Programs\Subloc`). From source, it is `.venv\Scripts\python.exe -m subloc`.
 
-**Claude Desktop**: Settings → Developer → Edit Config (`claude_desktop_config.json`):
+**Claude Desktop** with the installed app: Settings → Developer → Edit Config (`claude_desktop_config.json`),
+with your Windows user name in place of `YOU`:
+
+```json
+{
+  "mcpServers": {
+    "subloc": {
+      "command": "C:\\Users\\YOU\\AppData\\Local\\Programs\\Subloc\\subloc-cli.exe",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+**Claude Desktop** from source (replace `C:\path\to\Subloc` with the project folder):
 
 ```json
 {
@@ -25,7 +40,8 @@ Replace `C:\path\to\Subloc` with the folder where Subloc is.
 **Claude Code**:
 
 ```powershell
-claude mcp add subloc -- "C:\path\to\Subloc\.venv\Scripts\python.exe" -m subloc mcp
+claude mcp add subloc -- "$env:LOCALAPPDATA\Programs\Subloc\subloc-cli.exe" mcp        # installed app
+claude mcp add subloc -- "C:\path\to\Subloc\.venv\Scripts\python.exe" -m subloc mcp  # from source
 ```
 
 Any other MCP client: run `python -m subloc mcp` (stdio transport).

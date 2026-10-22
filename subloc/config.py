@@ -1,22 +1,15 @@
 """App-wide settings shared by the window and the command line (config.json in the data folder)."""
 
 import json
-import os
-import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-from . import ROOT
+from . import default_data_dir
 
 
 def data_dir() -> Path:
-    """Where models, logs and settings live: the project folder while developing (everything stays in one
-    place), %LOCALAPPDATA%/Subloc for the installed app."""
-    if getattr(sys, "frozen", False):
-        base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "Subloc"
-    else:
-        base = ROOT
-    return base
+    """Where models, logs and settings live (see subloc.default_data_dir)."""
+    return default_data_dir()
 
 
 def models_dir() -> Path:

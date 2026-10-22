@@ -18,7 +18,8 @@ subloc queue add "D:\Anime\Night Market"          # hand videos to the app's que
 subloc status                                     # settings, translator ready?, busy?
 ```
 
-While developing, `subloc` is `.venv\Scripts\python -m subloc`.
+With the installed app the command is `subloc-cli.exe` in Subloc's folder (usually
+`%LOCALAPPDATA%\Programs\Subloc`); from source it is `.venv\Scripts\python -m subloc`.
 
 ## translate / transcribe
 

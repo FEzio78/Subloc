@@ -19,15 +19,18 @@ end of this file). It builds on the following projects. Their licences apply to 
 | [NumPy](https://numpy.org) | BSD-3-Clause | audio handling |
 | [Pillow](https://python-pillow.org) | MIT-CMU | images |
 | [PyAV](https://github.com/PyAV-Org/PyAV) | BSD-3-Clause | dependency of faster-whisper |
-| NVIDIA CUDA runtime, cuBLAS, cuDNN, NVRTC | NVIDIA proprietary (redistributable) | GPU acceleration |
+| NVIDIA CUDA runtime, cuBLAS, cuDNN, NVRTC | NVIDIA proprietary (redistributable) | GPU acceleration (the installed app downloads them during Setup, NVIDIA cards only) |
 
 ## Programs (fetched by `tools/fetch_vendor.py`, bundled by the installer)
+
+The installer is made with [Inno Setup](https://jrsoftware.org/isinfo.php) and the app is packed with
+[PyInstaller](https://pyinstaller.org) (GPL-2.0 with a bootloader exception).
 
 | Component | Licence | Used for |
 |---|---|---|
 | [llama.cpp](https://github.com/ggml-org/llama.cpp) `llama-server` | MIT | built-in translator |
 | [mpv](https://mpv.io) (`libmpv`, build by shinchiro) | GPL-2.0-or-later | built-in player |
-| [FFmpeg](https://ffmpeg.org) | GPL-2.0-or-later / LGPL-2.1-or-later (build-dependent) | reading video and audio, burn-in |
+| [FFmpeg](https://ffmpeg.org) 9.0.2, "essentials" build by [gyan.dev](https://www.gyan.dev/ffmpeg/builds/) | GPL-3.0 (includes x264, libass; source: https://ffmpeg.org/download.html and the build's own source links) | reading video and audio, style preview, burn-in |
 
 ## Fonts
 

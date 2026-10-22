@@ -14,6 +14,7 @@ Public repo: https://github.com/FEzio78/Subloc (GPL-3.0-or-later). Design + hist
 .venv\Scripts\python -m subloc mcp                                # MCP server for agents: docs/agents.md
 .venv\Scripts\python -m pytest ; .venv\Scripts\python -m ruff check . ; .venv\Scripts\python -m ruff format . ; .venv\Scripts\python -m mypy subloc
 .venv\Scripts\python tools\make_screenshots.py   # README images from a synthetic demo
+.venv\Scripts\python toolsuild.py             # dist\Subloc (Subloc.exe + subloc-cli.exe) + installer (Inno Setup 6)
 ```
 
 All four checks must pass before committing.
@@ -66,9 +67,13 @@ out = the transcript is the result.
 
 ## Next
 
-1. **Windows installer** (PyInstaller or Nuitka): bundle Python app + `vendor/` (llama.cpp CUDA+Vulkan,
-   libmpv) + an ffmpeg build; data in `%LOCALAPPDATA%\Subloc` (see `config.data_dir`); first launch → Setup.
-   NVIDIA CUDA DLLs: bundle or fetch at setup (licence permission is in THIRD_PARTY_NOTICES.md).
+1. Installer: built (`tools/build.py`, `installer/`): PyInstaller onedir (~0.7 GB) + Inno Setup per-user, English +
+   Arabic, ~150 MB. Setup downloads on NVIDIA PCs only: CUDA libs (`cuda.py`, pins = uv.lock, test enforces)
+   unless NVIDIA's own CUDA 12 + cuDNN 9 are installed (`cuda.system_dirs`), and llama.cpp's CUDA build when
+   the built-in translator is chosen; Whisper already in the standard HF cache is used (`asr.local_model`).
+   The installed app keeps only Windows/NVIDIA folders on its PATH, from its first runtime hook
+   (`installer/rth_system_path.py`): other programs' DLLs on PATH crashed it (R6034). To do: code signing
+   (SmartScreen warns without it), a test on a clean PC.
 2. Publish v0.1.0 on GitHub Releases (GitHub Actions checks run on every push and pass).
 3. Later: reading burned-in subtitles (research notes in PLAN.md §2.2), live captions for system audio,
    CapCut-style animated captions, more UI languages.

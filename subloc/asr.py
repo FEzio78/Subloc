@@ -2,6 +2,7 @@
 
 import re
 from collections.abc import Callable
+from pathlib import Path
 
 import numpy as np
 
@@ -83,6 +84,21 @@ def transcribe(
 _models: dict[str, object] = {}
 
 
+def local_model(name: str) -> Path | None:
+    """A Whisper model already on this PC: Subloc's own model cache, or the standard Hugging Face cache in the
+    user folder (other Whisper tools download there). The folder holding model.bin, or None."""
+    import os
+
+    caches = [Path(os.environ["HF_HOME"]) / "hub"] if os.environ.get("HF_HOME") else []
+    caches.append(Path.home() / ".cache" / "huggingface" / "hub")
+    for cache in caches:
+        snaps = cache / f"models--Systran--faster-whisper-{name}" / "snapshots"
+        found = sorted(snaps.glob("*/model.bin"), key=lambda p: p.stat().st_mtime) if snaps.is_dir() else []
+        if found:
+            return found[-1].parent
+    return None
+
+
 def load_model(name: str):
     """Load once per process (the GUI reuses it across videos)."""
     if name not in _models:
@@ -92,8 +108,9 @@ def load_model(name: str):
         gpu = cuda_available()
         _models.clear()  # keep only one in VRAM
         try:
+            here = local_model(name)  # already on this PC (also from other Whisper tools): no download
             _models[name] = WhisperModel(
-                name, device="cuda" if gpu else "cpu", compute_type="float16" if gpu else "int8"
+                str(here) if here else name, device="cuda" if gpu else "cpu", compute_type="float16" if gpu else "int8"
             )
         except Exception as e:
             msg = str(e).lower()

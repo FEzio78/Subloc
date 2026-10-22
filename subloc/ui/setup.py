@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .. import hardware
+from .. import FROZEN, cuda, hardware
 from ..catalog import PRESETS, SPEECH, TRANSLATORS, Preset, recommend
 from ..config import Config, models_dir
 from ..download import Cancelled, download
@@ -456,7 +456,17 @@ class SetupWizard(QDialog):
     def _items(self) -> list[tuple[str, str, float, bool]]:
         """(key, title, size GB, already present)"""
         sp = SPEECH[self.preset.speech]
-        items = [("speech", tr("Speech recognition · Whisper {m}", m=sp.id), sp.size_gb, _whisper_present(sp.id))]
+        items = []
+        if self.hw and self.hw.nvidia and FROZEN:
+            # The installed app: the NVIDIA libraries come as a download, unless the PC already has them (Setup ran
+            # before, or NVIDIA's CUDA Toolkit + cuDNN are installed). The source tree has them in .venv.
+            present = cuda.installed() or bool(cuda.system_dirs())
+            items.append(("cuda", tr("NVIDIA graphics card support (CUDA)"), cuda.DOWNLOAD_GB, present))
+        items.append(("speech", tr("Speech recognition · Whisper {m}", m=sp.id), sp.size_gb, _whisper_present(sp.id)))
+        if self.provider == "builtin" and self.hw and self.hw.nvidia and FROZEN:
+            # The installer carries only the Vulkan/processor build of llama.cpp; NVIDIA's comes as a download.
+            items.append(("llama_cuda", tr("Built-in translator · engine for NVIDIA cards"), cuda.LLAMA_CUDA_SIZE / 1e9,
+                          cuda.llama_installed()))  # fmt: skip
         if self.provider == "builtin" and self.custom_model is None:
             trm = TRANSLATORS[self.preset.translator]
             path = models_dir() / "llm" / trm.file
@@ -529,7 +539,21 @@ class SetupWizard(QDialog):
         def work() -> None:
             for key, size in items:
                 try:
-                    if key == "speech":
+                    if key == "llama_cuda":
+                        cuda.install_llama(
+                            lambda done, total: bus.progress.emit(
+                                "llama_cuda", done / max(total, 1), f"{done / 1e9:.2f} / {total / 1e9:.2f} GB"
+                            ),
+                            cancel,
+                        )
+                    elif key == "cuda":
+                        cuda.install(
+                            lambda done, total: bus.progress.emit(
+                                "cuda", done / max(total, 1), f"{done / 1e9:.1f} / {total / 1e9:.1f} GB"
+                            ),
+                            cancel,
+                        )
+                    elif key == "speech":
                         _fetch_whisper(
                             SPEECH[preset.speech].id, size, lambda f, d: bus.progress.emit("speech", f, d), cancel
                         )
@@ -619,8 +643,10 @@ def _whisper_dir(name: str) -> Path:
 
 
 def _whisper_present(name: str) -> bool:
-    snap = _whisper_dir(name) / "snapshots"
-    return snap.is_dir() and any(snap.glob("*/model.bin"))
+    """In Subloc's model cache or the user's standard Hugging Face cache (other Whisper tools)."""
+    from ..asr import local_model
+
+    return local_model(name) is not None
 
 
 def _folder_size(path: Path) -> int:

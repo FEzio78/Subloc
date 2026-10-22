@@ -103,17 +103,24 @@ address.
 On a strong GPU an 87-minute film takes about 9 minutes. The Light setup runs on the processor: it works,
 but a 1-hour episode can take 1–3 hours on a laptop.
 
+## Install (Windows 10/11, 64-bit)
+
+Download `Subloc-<version>-setup.exe` from [Releases](https://github.com/FEzio78/Subloc/releases) and run it.
+No admin rights are needed; the installer is in English and Arabic. On first launch Setup checks your PC,
+recommends models and downloads them (and NVIDIA's CUDA libraries if you have an NVIDIA card) into
+`%LOCALAPPDATA%\Subloc`. Uninstalling asks whether to keep those downloads.
+
 ## Run from source (Windows)
 
-Needs [ffmpeg](https://ffmpeg.org) on `PATH`, [uv](https://docs.astral.sh/uv/) and
-[7-Zip](https://www.7-zip.org) (to unpack the player library).
+Needs [uv](https://docs.astral.sh/uv/) and [7-Zip](https://www.7-zip.org) (to unpack the player library).
 
 ```powershell
 git clone https://github.com/FEzio78/Subloc
 cd Subloc
 . .\env.ps1 -Setup                         # Python 3.12 + packages, all inside this folder
-.venv\Scripts\python tools\fetch_vendor.py # llama.cpp + libmpv (pinned, checksum-verified)
+.venv\Scripts\python tools\fetch_vendor.py # llama.cpp, libmpv, ffmpeg (pinned, checksum-verified)
 .\Subloc.bat                               # first launch opens Setup
+.venv\Scripts\python tools\build.py        # the installer: dist\Subloc-<version>-setup.exe (needs Inno Setup 6)
 ```
 
 ## Command line and AI agents

@@ -26,11 +26,23 @@ def _vendor() -> Path:
     return base / "vendor" / "llama"
 
 
+def _backend_dir(backend: str) -> Path | None:
+    """vendor/llama/<backend> (source tree, and the installer's Vulkan build), or the data folder (the NVIDIA build,
+    which the installed app downloads in Setup)."""
+    for base in (_vendor(), data_dir() / "llama"):
+        if (base / backend / "llama-server.exe").exists():
+            return base / backend
+    return None
+
+
 def _nvidia_dirs() -> list[str]:
     """CUDA runtime DLLs installed with the app's Python packages (shared with Whisper)."""
     import site
 
-    dirs = []
+    from .cuda import system_dirs
+
+    downloaded = data_dir() / "cuda"  # the installed app: downloaded by Setup, or NVIDIA's own install
+    dirs = [str(downloaded)] if downloaded.is_dir() else [str(d) for d in system_dirs()]
     for sp in site.getsitepackages():
         for name in ("cuda_runtime", "cublas"):
             d = Path(sp) / "nvidia" / name / "bin"
@@ -40,8 +52,7 @@ def _nvidia_dirs() -> list[str]:
 
 
 def available_backends() -> list[str]:
-    v = _vendor()
-    return [b for b in ("cuda", "vulkan") if (v / b / "llama-server.exe").exists()]
+    return [b for b in ("cuda", "vulkan") if _backend_dir(b) is not None]
 
 
 def pick_backend(has_nvidia: bool, has_other_gpu: bool) -> tuple[str, bool]:
@@ -91,7 +102,7 @@ class BuiltinEngine:
 
                 hw = detect()
                 self.backend, self.use_gpu = pick_backend(bool(hw.nvidia), bool(hw.other_gpus))
-            exe = _vendor() / self.backend / "llama-server.exe"
+            exe = (_backend_dir(self.backend) or _vendor() / self.backend) / "llama-server.exe"
             self.port = _free_port()
             log_dir = data_dir() / "logs"
             log_dir.mkdir(parents=True, exist_ok=True)

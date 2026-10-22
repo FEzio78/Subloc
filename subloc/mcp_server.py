@@ -320,7 +320,7 @@ def serve() -> None:
     write_lock = threading.Lock()
     server = Server()
     for line in sys.stdin:
-        line = line.strip()
+        line = line.strip().lstrip(chr(0xFEFF))  # some shells start a pipe with a byte-order mark
         if not line:
             continue
         try:

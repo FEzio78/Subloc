@@ -412,6 +412,8 @@ AR: dict[str, str] = {
     "Translator · {m}": "المترجم · {m}",
     "About {n} GB to download into {path}. Free space: {free} GB.": "نحو {n} غيغابايت للتنزيل إلى {path}. المساحة المتاحة: {free} غيغابايت.",
     "Everything needed is already on this PC.": "كل ما يلزم موجود على هذا الجهاز.",
+    "Built-in translator · engine for NVIDIA cards": "المترجم المدمج · محرّك بطاقات NVIDIA",
+    "NVIDIA graphics card support (CUDA)": "دعم بطاقة رسوميات NVIDIA (CUDA)",
     "Already installed": "مثبّت مسبقًا",
     "Installed": "تم التثبيت",
     "Not enough free disk space. Free at least {n} GB and try again.": "المساحة غير كافية. حرّر {n} غيغابايت على الأقل ثم أعد المحاولة.",

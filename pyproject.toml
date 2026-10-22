@@ -53,6 +53,7 @@ python-preference = "only-managed"
 [dependency-groups]
 dev = [
     "mypy>=2.4.0",
+    "pyinstaller>=6.22.3",
     "pytest>=9.1.1",
     "ruff>=0.17.1",
 ]

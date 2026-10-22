@@ -45,3 +45,7 @@ busy.json
 # Home-screen thumbnails: frames of the user's videos
 thumbs/
 *.part
+
+# Build output (tools/build.py)
+/build/
+/dist/

@@ -14,6 +14,13 @@ def setup_cuda_dlls() -> None:
     _done = True
     import site
 
+    from .config import data_dir
+    from .cuda import system_dirs
+
+    downloaded = data_dir() / "cuda"  # the installed app: Setup downloads them here (NVIDIA cards only)
+    for d in [downloaded] if downloaded.is_dir() else system_dirs():  # or NVIDIA's own install, if the PC has it
+        os.add_dll_directory(str(d))
+        os.environ["PATH"] = str(d) + os.pathsep + os.environ["PATH"]
     for sp in site.getsitepackages():
         nvidia = Path(sp) / "nvidia"
         if not nvidia.is_dir():

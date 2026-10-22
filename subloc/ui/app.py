@@ -1133,9 +1133,9 @@ def main() -> None:
     app.setStyle("Fusion")
     cfg = Config.load()
     apply_language(app, cfg.ui_lang)
+    app.setWindowIcon(app_icon())  # every window and the notifications; after apply_language (it needs the fonts)
     if not cfg.setup_done:
         run_setup_flow(None)
-    app.setWindowIcon(app_icon())  # also the notifications' icon; after apply_language (it needs the fonts)
     w = MainWindow()
     _windows.append(w)
     w.show()
