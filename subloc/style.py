@@ -105,7 +105,7 @@ def ass_text(
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
     ]
     events = []
-    for d in build_display(cues, translated):
+    for d in build_display(cues, translated, lang):
         lines = [f"{RLM}{ln}{RLM}" if rtl else ln for ln in d.lines]
         text = r"\N".join(ln.replace("{", "(").replace("}", ")") for ln in lines)
         if d.italic:

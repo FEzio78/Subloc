@@ -1,5 +1,6 @@
 """Turn raw ASR segments into readable subtitle cues and sentence groups."""
 
+from .langs import LINE, line_width
 from .models import Cue, Word, renumber
 
 # Bump when the rules below change: saved projects are re-split from their raw transcript.
@@ -93,9 +94,11 @@ def segment(cues: list[Cue]) -> list[Cue]:
     return renumber(out)
 
 
-def max_chars(cue: Cue) -> int:
-    """How many target characters fit in this cue's time on screen (2 lines max)."""
-    return int(min(84, max(16, cue.duration * READ_CPS)))
+def max_chars(cue: Cue, lang: str | None = None) -> int:
+    """How many characters of `lang` fit in this cue's time on screen (2 lines max). Wide scripts (Chinese,
+    Japanese, Korean) get fewer: their characters are wider and each carries more."""
+    scale = line_width(lang) / LINE
+    return int(min(84 * scale, max(16 * scale, cue.duration * READ_CPS * scale)))
 
 
 MAX_CHAIN = 3  # a sentence group is at most 4 cues, even when punctuation is missing

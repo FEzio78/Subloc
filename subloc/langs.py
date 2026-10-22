@@ -36,6 +36,17 @@ LANGS = {
     "mixed": "several languages",
 }
 
+LINE = 42  # characters per subtitle line (Latin, Cyrillic, Arabic, Thai…)
+# Wide scripts fit fewer characters on a line (as in professional subtitle style guides).
+LINE_WIDTH = {"ja": 13, "zh": 16, "ko": 16}
+# Chinese and Japanese don't put spaces between words: lines may break between characters.
+NO_SPACES = {"ja", "zh"}
+
+
+def line_width(code: str | None) -> int:
+    return LINE_WIDTH.get(code or "", LINE)
+
+
 TARGET_BRIEF = {
     "ar": (
         "Write Modern Standard Arabic (فصحى), natural and easy to read, as used in professional "

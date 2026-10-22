@@ -212,3 +212,38 @@ def test_single_line_requests_are_not_rejected_by_the_alignment_check():
 
 def test_no_speech_gives_no_cues_instead_of_crashing():
     assert segment([]) == []
+
+
+# ---------------------------------------------------------------- any target language
+
+
+def test_wide_scripts_get_shorter_lines():
+    from subloc.models import Cue
+    from subloc.segment import max_chars
+
+    c = Cue(id=1, start=0.0, end=3.0, text="x")
+    assert max_chars(c, "ja") < max_chars(c, "zh") < max_chars(c, "en")
+    assert max_chars(c, "ko") == max_chars(c, "zh")
+    assert max_chars(c, None) == max_chars(c, "es")
+
+
+def test_chinese_and_japanese_break_between_characters():
+    from subloc.subtitles import wrap
+
+    zh = "我们明天早上八点在河边的桥上见面，不要迟到了好吗"
+    lines = wrap(zh, 16, "zh")
+    assert len(lines) == 2 and "".join(lines) == zh
+    assert lines[0].endswith("，")  # after the punctuation near the middle
+    ja = "明日の朝八時に川の橋で待っているから絶対に遅れないでね"
+    assert "".join(wrap(ja, 13, "ja")) == ja and len(wrap(ja, 13, "ja")) == 2
+    assert wrap("短い", 16, "zh") == ["短い"]
+
+
+def test_other_scripts_keep_breaking_at_spaces():
+    from subloc.subtitles import wrap
+
+    ko = "내일 아침 여덟 시에 다리에서 기다릴게 늦지 마"
+    assert all(" " not in (ln[0] + ln[-1]) for ln in wrap(ko, 16, "ko"))
+    assert wrap("ทดสอบภาษาไทยที่ไม่มีช่องว่างระหว่างคำยาวมากๆเลยนะครับ", 42, "th") == [
+        "ทดสอบภาษาไทยที่ไม่มีช่องว่างระหว่างคำยาวมากๆเลยนะครับ"
+    ]  # no spaces: kept whole rather than splitting a word

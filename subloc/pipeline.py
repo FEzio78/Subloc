@@ -202,7 +202,13 @@ def _translate_and_write(video, opt, proj, save, rep, cancel, outputs):
         if cancel.is_set():
             raise Cancelled()
 
-    if opt.target == proj.language:
+    if opt.target == proj.language:  # subtitles in the spoken language: the transcript is the result
+        for c in proj.cues:
+            c.translation = c.text
+        proj.target_language = opt.target
+        save()
+        for path in write_outputs(video, proj, opt.target, opt.style):
+            outputs.append(path)
         rep.cues(proj.cues)
         rep.stage("done", 1)
         return proj, outputs

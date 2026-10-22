@@ -63,7 +63,7 @@ def ui_lang() -> str:
 
 
 SOURCE_LANGS = ["ko", "ja", "en", "ru", "tr", "zh", "es", "fr", "de", "it", "pt", "hi", "th", "vi", "id", "tl", "ar"]
-TARGET_LANGS = [("ar", "العربية · Arabic"), ("en", "English")]
+TARGET_LANGS = [(c, LANGS[c]) for c in SOURCE_LANGS]  # subtitles in any language that can be spoken
 SPEECH = [("large-v3", "Best"), ("medium", "Balanced"), ("small", "Light")]
 
 
@@ -414,8 +414,10 @@ class SegControl(QFrame):
         lay.setContentsMargins(3, 3, 3, 3)
         lay.setSpacing(2)
         self.group = QButtonGroup(self)
+        self.keys: dict[str, QPushButton] = {}
         for i, (key, text) in enumerate(items):
             b = QPushButton(text)
+            self.keys[key] = b
             b.setObjectName("seg")
             b.setCheckable(True)
             b.setChecked(i == 0)
@@ -423,6 +425,9 @@ class SegControl(QFrame):
             b.clicked.connect(lambda _=False, k=key: self.changed.emit(k))
             self.group.addButton(b)
             lay.addWidget(b)
+
+    def set_text(self, key: str, text: str) -> None:
+        self.keys[key].setText(text)
 
 
 class JobPage(QWidget):
@@ -559,7 +564,7 @@ class JobPage(QWidget):
         rhead.addSpacing(8)
         rhead.addWidget(self.count)
         rhead.addStretch()
-        self.mode = SegControl([("both", "Both"), ("original", "Original"), ("translation", "Arabic")])
+        self.mode = SegControl([("both", "Both"), ("original", "Original"), ("translation", "Translation")])
         rhead.addWidget(self.mode)
         right.addLayout(rhead)
         line = QFrame()

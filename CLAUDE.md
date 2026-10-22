@@ -60,6 +60,9 @@ dropped folders include subfolders; the queue is kept between sessions (queue.js
 the PC is kept awake while working (`power`), a notification when it's done, optional sleep/shut down
 after it (60 s countdown, never remembered between sessions); new logo (Plex Serif S) + opening animation
 (`ui/intro`); CLI with sub-commands + `--json`, MCP server for agents, shared busy lock.
+Subtitles in any of the 17 spoken languages (same list both ways); line width and wrapping per script
+(`langs.LINE_WIDTH`: ja 13, zh/ko 16, else 42; zh/ja break between characters); same language in and
+out = the transcript is the result.
 
 ## Next
 

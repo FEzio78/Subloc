@@ -7,7 +7,7 @@
 # Subloc — ترجمة لأي مقطع فيديو على جهازك
 
 **ترجمة لأي فيلم أو مسلسل أو أنمي، تُصنع على جهازك أنت.** أفلت المقطع في البرنامج، فيستمع إلى الكلام ويكتبه
-ثم يترجمه إلى العربية بذكاء اصطناعي يعمل محليًا. لا يُرفع أي شيء، ولا حساب ولا اشتراك.
+ثم يترجمه إلى العربية (أو إلى أي لغة من 17 لغة) بذكاء اصطناعي يعمل محليًا. لا يُرفع أي شيء، ولا حساب ولا اشتراك.
 
 صُمّم أولًا للمشاهد العربي ليشاهد مسلسلاته وأفلامه والأنمي المفضلة لديه بأي لغة كانت، وبطريقة سهلة لأي شخص.
 
@@ -46,7 +46,8 @@ subtitles in your language — translated by AI running locally. Nothing is uplo
 subscription.
 
 Built first for **Arabic** viewers to watch their favorite shows, movies and anime in whatever language
-they were made in — and designed so anyone can use it.
+they were made in — and designed so anyone can use it: subtitles can be made in any of 17 languages
+(Arabic, English, Spanish, French, German, Japanese, Korean, Chinese, Hindi, Thai and more).
 
 > **Status:** beta, Windows. Runs from source today; a one-click installer is next.
 

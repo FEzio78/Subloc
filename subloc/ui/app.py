@@ -584,7 +584,9 @@ class MainWindow(HomeMixin, LibraryMixin, QueueMixin, QMainWindow):
         if self.jobp.display.currentWidget() is self.jobp.player and time.time() - self._last_subs_write > 4:
             self._refresh_player_subs()
         j = self.jobp
-        j.lines.rtl = self.home.tgt.currentData() in RTL
+        target = self.home.tgt.currentData()
+        j.lines.rtl = target in RTL
+        j.mode.set_text("translation", tr(LANGS.get(target, target)))  # Both · Original · <the language>
         j.lines.set_rows(_rows(cues))
         j.count.setText(str(len(cues)))
         self._update_timeline()

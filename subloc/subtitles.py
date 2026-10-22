@@ -3,12 +3,12 @@
 from dataclasses import dataclass
 from pathlib import Path
 
+from .langs import LINE, NO_SPACES, line_width
 from .models import Cue
 from .segment import continues_previous
 
 RTL = {"ar", "fa", "ur", "he"}
 RLM = "\u200f"  # right-to-left mark
-LINE = 42
 
 
 def _ts(t: float) -> str:
@@ -19,14 +19,26 @@ def _ts(t: float) -> str:
     return f"{h:02}:{m:02}:{s:02},{ms:03}"
 
 
-def wrap(text: str, width: int = LINE) -> list[str]:
+CJK_BREAK_AFTER = "，。、！？；：,.!?…）」』"
+
+
+def wrap(text: str, width: int = LINE, lang: str | None = None) -> list[str]:
+    """Two balanced lines when it doesn't fit on one. Chinese and Japanese break between characters (after
+    punctuation when there is some near the middle); other languages break at the space nearest the middle."""
     text = " ".join(text.split())
-    if len(text) <= width or " " not in text:
+    if len(text) <= width:
         return [text]
     mid = len(text) // 2
-    spaces = [i for i, ch in enumerate(text) if ch == " "]
-    cut = min(spaces, key=lambda i: abs(i - mid))
-    return [text[:cut], text[cut + 1 :]]
+    if " " in text and lang not in NO_SPACES:
+        spaces = [i for i, ch in enumerate(text) if ch == " "]
+        cut = min(spaces, key=lambda i: abs(i - mid))
+        return [text[:cut], text[cut + 1 :]]
+    if lang in NO_SPACES:
+        marks = [i + 1 for i, ch in enumerate(text[:-1]) if ch in CJK_BREAK_AFTER]
+        near = min(marks, key=lambda i: abs(i - mid)) if marks else mid
+        cut = near if abs(near - mid) <= width // 3 else mid  # punctuation, unless it makes lopsided lines
+        return [text[:cut].strip(), text[cut:].strip()]
+    return [text]  # no spaces to break at (Thai, a long word): one line rather than a broken word
 
 
 SHORT = 1.0  # cues shorter than this get paired with a neighbour
@@ -42,9 +54,10 @@ class DisplayCue:
     italic: bool = False  # song lyrics
 
 
-def build_display(cues: list[Cue], translated: bool) -> list[DisplayCue]:
+def build_display(cues: list[Cue], translated: bool, lang: str | None = None) -> list[DisplayCue]:
     """Pair very short lines with a neighbour as a two-line dialogue cue ("- …" / "- …"),
     the way professional subtitles avoid lines that flash by too fast to read."""
+    width = line_width(lang)
     kept = [c for c in cues if (c.translation if translated else c.text)]
     items = [(c.start, c.end, ((c.translation if translated else c.text) or "").strip()) for c in kept]
     out: list[DisplayCue] = []
@@ -54,7 +67,7 @@ def build_display(cues: list[Cue], translated: bool) -> list[DisplayCue]:
         if i + 1 < len(items):
             s2, e2, t2 = items[i + 1]
             short = (e - s) < SHORT or (e2 - s2) < SHORT
-            fits = len(t) <= LINE and len(t2) <= LINE
+            fits = len(t) <= width and len(t2) <= width
             # Don't pair two lines of one sentence, or a line whose sentence runs on into the next cue.
             joined = continues_previous(kept[i], kept[i + 1]) or (
                 i + 2 < len(kept) and continues_previous(kept[i + 1], kept[i + 2])
@@ -64,7 +77,7 @@ def build_display(cues: list[Cue], translated: bool) -> list[DisplayCue]:
                 out.append(DisplayCue(s, e2, [f"- {t}", f"- {t2}"], kept[i].kind == "song"))
                 i += 2
                 continue
-        out.append(DisplayCue(s, e, wrap(t), kept[i].kind == "song"))
+        out.append(DisplayCue(s, e, wrap(t, width, lang), kept[i].kind == "song"))
         i += 1
     return out
 
@@ -72,7 +85,7 @@ def build_display(cues: list[Cue], translated: bool) -> list[DisplayCue]:
 def write_srt(cues: list[Cue], path: Path, translated: bool, lang: str | None = None) -> None:
     rtl = lang in RTL
     blocks = []
-    for n, d in enumerate(build_display(cues, translated), 1):
+    for n, d in enumerate(build_display(cues, translated, lang), 1):
         lines = d.lines
         if rtl:
             # Anchor each line as RTL so leading/trailing punctuation lands on the correct side.

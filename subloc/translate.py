@@ -88,11 +88,12 @@ def _batches(cues: list[Cue]) -> list[list[Cue]]:
     return out
 
 
-def _user(batch: list[Cue], before: list[Cue], after: list[Cue], continues: dict[int, bool], src: str, tgt: str) -> str:
+def _user(batch: list[Cue], before: list[Cue], after: list[Cue], continues: dict[int, bool], src: str, tgt: str,
+          tgt_code: str | None = None) -> str:  # fmt: skip
     """`continues`: cue id → is the rest of the previous cue's sentence (see continuation_flags)."""
     lines = []
     for c in batch:
-        item = {"id": c.id, "max_chars": max_chars(c), "text": c.text}
+        item = {"id": c.id, "max_chars": max_chars(c, tgt_code), "text": c.text}
         if c.speaker:
             item["speaker"] = c.speaker
         if c.lang and src == LANGS["mixed"]:
@@ -206,7 +207,7 @@ def translate(
         ids = {c.id for c in batch}
         # Only mark a continuation when the cue it continues is in this same request.
         cont = {c.id: flags[c.id] and pos[c.id] > 0 and cues[pos[c.id] - 1].id in ids for c in batch}
-        user = _user(batch, before, after, cont, src, tgt)
+        user = _user(batch, before, after, cont, src, tgt, tgt_code)
         if glossary:
             # Only the names that occur here (glossary may be large; keeps prompts small and focused).
             names = glossary.relevant(" ".join(c.text for c in [*before, *batch, *after]))

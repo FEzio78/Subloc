@@ -146,6 +146,7 @@ AR: dict[str, str] = {
     "You have the latest version ({v}).": "لديك أحدث إصدار ({v}).",
     # ---- library
     "Library": "المكتبة",
+    "Translation": "الترجمة",
     "Search": "بحث",
     "All": "الكل",
     "Untranslated": "غير المترجمة",
@@ -198,7 +199,6 @@ AR: dict[str, str] = {
     "Translator": "المترجم",
     "Detect automatically": "اكتشاف تلقائي",
     "Mixed (changes during video)": "مختلطة (تتغير أثناء المقطع)",
-    "العربية · Arabic": "العربية",
     "English": "الإنجليزية",
     "Best": "الأفضل",
     "Faster": "أسرع",
