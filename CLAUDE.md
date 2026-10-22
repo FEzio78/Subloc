@@ -29,11 +29,15 @@ All four checks must pass before committing.
   `service` (no-window layer: app settings, jobs, JSON reports; used by `cli` and `mcp_server`) · `busy`
   (one GPU job at a time across window, CLI and agents: OS file lock) · `cli` · `mcp_server` (MCP over stdio,
   protocol hand-written, no extra packages).
-- UI (`subloc/ui`): `app` (main window/controller) · `pages` (Home, Job, Queue, Settings) · `library_page` ·
-  `widgets` · `lines` · `player` (libmpv) · `style_dialog` · `setup` (wizard) · `i18n` (Arabic table) · `theme`.
+- UI (`subloc/ui`): `app` (main window: wiring, job, player, export) + its parts `home_ctl` (recent list),
+  `library_ctl` (scans, watching), `queue_ctl` (queue, busy lock, power, notifications) · `pages` (Home, Job,
+  Queue, Settings + About) · `library_page` · `widgets` (incl. Banner, Toast) · `icons` (Lucide SVGs in
+  `assets/icons`, recoloured) · `shortcuts` (one list: keys + F1 window) · `intro` · `lines` · `player` (libmpv) ·
+  `style_dialog` · `setup` (wizard) · `i18n` (Arabic table) · `theme`.
+- UI rules: no emoji as icons (use `icons.icon(name, colour)`); messages that need no answer are toasts
+  (`self.toast(...)`), questions and real errors stay dialogs.
 - App data while developing (git-ignored): `config.json`, `recent.json`, `library.json`, `queue.json`, `busy.lock`,
   `thumbs/`, `logs/`.
-- `subloc/gui.py` is the old pre-redesign window — unused, safe to delete.
 
 ## Rules (hard-won)
 

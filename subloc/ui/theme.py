@@ -141,6 +141,13 @@ def stylesheet() -> str:
                             padding: 6px 8px; font-size: 9pt; }}
     QCheckBox#watch {{ spacing: 8px; color: {MUTED}; }}
 
+    #toast {{ background: {SURFACE_3}; border: 1px solid #3a3f46; border-radius: 10px; }}
+    QPushButton#toastAction {{ background: transparent; border: none; color: {ACCENT}; font-weight: 600;
+                              padding: 4px 8px; }}
+    QPushButton#toastAction:hover {{ background: #343a41; }}
+    QPushButton#toastClose {{ background: transparent; border: none; padding: 4px; border-radius: 6px; }}
+    QPushButton#toastClose:hover {{ background: #343a41; }}
+
     QSlider::groove:horizontal {{ height: 4px; background: {SURFACE_3}; border-radius: 2px; }}
     QSlider::sub-page:horizontal {{ background: {ACCENT}; border-radius: 2px; }}
     QSlider::handle:horizontal {{ background: {TEXT}; width: 14px; height: 14px; margin: -5px 0; border-radius: 7px; }}

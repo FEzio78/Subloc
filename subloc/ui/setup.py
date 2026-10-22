@@ -28,7 +28,7 @@ from ..download import Cancelled, download
 from ..llm import LMStudio
 from . import theme as t
 from .i18n import UI_LANGS, tr, translate_tree
-from .widgets import BrandMark, label
+from .widgets import Banner, BrandMark, label
 
 
 class _Bus(QObject):
@@ -291,8 +291,7 @@ class SetupWizard(QDialog):
         addr.addWidget(self.url, 1)
         addr.addWidget(test)
         sl.addLayout(addr)
-        self.test_result = label("", "muted")
-        self.test_result.setWordWrap(True)
+        self.test_result = Banner()
         sl.addWidget(self.test_result)
         lay.addWidget(self.server_extra)
         lay.addStretch()
@@ -364,7 +363,7 @@ class SetupWizard(QDialog):
     def next(self) -> None:
         i = self.stack.currentIndex()
         if i == 2 and self.provider == "server" and not self.url.text().strip():
-            self.test_result.setText(tr("Enter the server address first."))
+            self.test_result.say(tr("Enter the server address first."), "warning")
             return
         if i == 3:
             if self.installing:
@@ -430,7 +429,7 @@ class SetupWizard(QDialog):
 
     def _test(self) -> None:
         url = self.url.text().strip()
-        self.test_result.setText(tr("Connecting…"))
+        self.test_result.say(tr("Connecting…"), "info")
 
         def work() -> None:
             try:
@@ -450,9 +449,7 @@ class SetupWizard(QDialog):
         threading.Thread(target=work, daemon=True).start()
 
     def _on_test(self, ok: bool, msg: str) -> None:
-        self.test_result.setObjectName("muted" if ok else "error")
-        self.test_result.setStyleSheet(f"color: {t.OK if ok else t.ERR};")
-        self.test_result.setText(("✓  " if ok else "✕  ") + msg)
+        self.test_result.say(msg, "ok" if ok else "error")
 
     # ---------------------------------------------------------------- install
 
@@ -494,7 +491,9 @@ class SetupWizard(QDialog):
             head = QHBoxLayout()
             head.addWidget(label(title))
             head.addStretch()
-            state = label(tr("Already installed ✓") if present else f"{size:.1f} GB", "muted")
+            state = label(tr("Already installed") if present else f"{size:.1f} GB", "muted")
+            if present:
+                state.setStyleSheet(f"color: {t.OK};")
             head.addWidget(state)
             row.addLayout(head)
             bar = QProgressBar()
@@ -566,7 +565,8 @@ class SetupWizard(QDialog):
         state, bar, _ = self.rows[key]
         if not err:
             bar.setValue(1000)
-            state.setText(tr("Installed ✓"))
+            state.setText(tr("Installed"))
+            state.setStyleSheet(f"color: {t.OK};")
         elif err == "stopped":
             state.setText(tr("Stopped"))
         else:

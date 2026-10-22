@@ -32,13 +32,28 @@ from ..batch import VIDEO_EXT
 from ..langs import LANGS
 from ..recent import Recent, thumb_path
 from ..recent import key as recent_key
+from ..service import version
 from ..translate import MAX_PARALLEL
+from . import icons
 from . import theme as t
 from .i18n import UI_LANGS, rtl, tr
 from .lines import LinesModel, LinesView
 from .player import Player
 from .player import available as player_available
-from .widgets import Arrow, DropStrip, FramePreview, RouteBar, RouteField, StageStrip, Timeline, fmt_time, label
+from .widgets import (
+    Arrow,
+    Banner,
+    BrandMark,
+    DropStrip,
+    FramePreview,
+    IconText,
+    RouteBar,
+    RouteField,
+    StageStrip,
+    Timeline,
+    fmt_time,
+    label,
+)
 
 
 def ui_lang() -> str:
@@ -150,9 +165,10 @@ class HomePage(QWidget):
         trust = QHBoxLayout()
         trust.setSpacing(22)
         trust.addStretch()
-        for text in ("🔒  Runs on this PC — nothing is uploaded", "Subtitles are saved next to your video",
-                     "Stop anytime — it picks up where it left off"):  # fmt: skip
-            trust.addWidget(label(text, "faint"))
+        for icon_name, text in (("lock", "Runs on this PC — nothing is uploaded"),
+                                ("captions", "Subtitles are saved next to your video"),
+                                ("refresh-cw", "Stop anytime — it picks up where it left off")):  # fmt: skip
+            trust.addWidget(IconText(icon_name, text, t.FAINT, "faint"))
         trust.addStretch()
         col.addLayout(trust)
         self.set_recent([])
@@ -474,9 +490,7 @@ class JobPage(QWidget):
         self.timeline = Timeline()
         self.timeline.seek.connect(self.seek.emit)
         left.addWidget(self.timeline)
-        self.banner = label("", "warning")
-        self.banner.setWordWrap(True)
-        self.banner.hide()
+        self.banner = Banner()
         left.addWidget(self.banner)
 
         actions = QHBoxLayout()
@@ -485,18 +499,23 @@ class JobPage(QWidget):
         self.start_btn.setObjectName("primary")
         self.start_btn.setMinimumWidth(130)
         self.start_btn.clicked.connect(self.start.emit)
-        self.play_btn = QPushButton("▶  Play with subtitles")
+        self.play_btn = QPushButton("Play with subtitles")
+        self.play_btn.setIcon(icons.icon("play", t.ACCENT_INK))
         self.play_btn.setObjectName("primary")
         self.play_btn.setMinimumWidth(190)
         self.play_btn.clicked.connect(self.play.emit)
-        self.watch_btn = QPushButton("▶  Watch while it works")
+        self.watch_btn = QPushButton("Watch while it works")
+        self.watch_btn.setIcon(icons.icon("monitor-play", t.TEXT))
         self.watch_btn.clicked.connect(self.watch.emit)
         self.external_btn = QPushButton("Open in my player")
+        self.external_btn.setIcon(icons.icon("external-link"))
         self.external_btn.setObjectName("ghost")
         self.external_btn.clicked.connect(self.open_external.emit)
         self.style_btn = QPushButton("Subtitle style…")
+        self.style_btn.setIcon(icons.icon("palette", t.TEXT))
         self.style_btn.clicked.connect(self.edit_style.emit)
         self.export_btn = QPushButton("Export")
+        self.export_btn.setIcon(icons.icon("download", t.TEXT))
         menu = QMenu(self.export_btn)
         menu.addAction("Styled subtitles (.ass)", lambda: self.export.emit("ass"))
         menu.addAction("Save subtitles as…", lambda: self.export.emit("srt_as"))
@@ -506,10 +525,12 @@ class JobPage(QWidget):
         self.export_btn.setProperty("menu", True)
         self.eta = label("", "muted")
         self.files_btn = QPushButton("Show files")
+        self.files_btn.setIcon(icons.icon("folder-open"))
         self.files_btn.setObjectName("ghost")
         self.files_btn.clicked.connect(self.show_files.emit)
         self.stop_btn = QPushButton("Stop")
         self.stop_btn.setObjectName("ghost")
+        self.stop_btn.setIcon(icons.icon("square"))
         self.stop_btn.clicked.connect(self.stop.emit)
         for w in (self.start_btn, self.play_btn, self.watch_btn, self.style_btn, self.export_btn):
             actions.addWidget(w)
@@ -659,14 +680,17 @@ class QueuePage(QWidget):
         head.addWidget(self.summary)
         head.addStretch()
         self.add_btn = QPushButton("Add videos…")
+        self.add_btn.setIcon(icons.icon("list-plus", t.TEXT))
         self.add_btn.clicked.connect(self.add.emit)
         self.clear_btn = QPushButton("Clear finished")
         self.clear_btn.setObjectName("ghost")
         self.clear_btn.clicked.connect(self.clear.emit)
         self.start_btn = QPushButton("Start queue")
         self.start_btn.setObjectName("primary")
+        self.start_btn.setIcon(icons.icon("play", t.ACCENT_INK))
         self.start_btn.clicked.connect(self.start.emit)
         self.stop_btn = QPushButton("Stop")
+        self.stop_btn.setIcon(icons.icon("square", t.TEXT))
         self.stop_btn.clicked.connect(self.stop.emit)
         # Not remembered between sessions on purpose: a forgotten "Shut down" must not end a later run.
         self.when_done = combo([("nothing", "Do nothing"), ("sleep", "Sleep"), ("shutdown", "Shut down")])
@@ -796,11 +820,17 @@ class QueueDelegate(QStyledItemDelegate):
 # ---------------------------------------------------------------- Settings
 
 
+GITHUB = "https://github.com/FEzio78/Subloc"
+
+
 class SettingsPage(QWidget):
     changed = Signal()
     edit_style = Signal()
     language = Signal(str)
     run_setup = Signal()
+    shortcuts = Signal()
+    check_updates = Signal()
+    open_link = Signal(str)
 
     def __init__(self):
         super().__init__()
@@ -838,6 +868,7 @@ class SettingsPage(QWidget):
         self.lang.currentIndexChanged.connect(lambda *_: self.language.emit(self.lang.currentData()))
         row("Interface language", "The app restarts its window to switch.", self.lang)
         setup = QPushButton("Run setup again…")
+        setup.setIcon(icons.icon("settings", t.TEXT))
         setup.clicked.connect(self.run_setup.emit)
         self.translator_info = label("", "muted")
         tb = QHBoxLayout()
@@ -861,6 +892,7 @@ class SettingsPage(QWidget):
         row("Keep names consistent", "Finds names first so each is spelled the same way in every line and "
             "episode.", self.glossary)  # fmt: skip
         style = QPushButton("Change…")
+        style.setIcon(icons.icon("palette", t.TEXT))
         style.clicked.connect(self.edit_style.emit)
         self.style_name = label("", "muted")
         sb = QHBoxLayout()
@@ -870,13 +902,60 @@ class SettingsPage(QWidget):
         sbw.setLayout(sb)
         row("Subtitle look", "Used for styled .ass subtitles and burned-in videos. Plain .srt files are always "
             "saved too.", sbw)  # fmt: skip
+        self.intro = QComboBox()
+        self.intro.setObjectName("boxed")
+        self.intro.addItem("On", "on")
+        self.intro.addItem("Off", "off")
+        self.intro.currentIndexChanged.connect(lambda *_: self.changed.emit())
+        row("Opening animation", "The short logo animation when Subloc starts. A click skips it.", self.intro)
         form.setColumnStretch(0, 3)
         form.setColumnStretch(1, 2)
         outer.addWidget(card)
 
-        about = label("Subloc runs entirely on this computer. Your videos and subtitles are never uploaded.", "muted")
-        outer.addWidget(about)
+        outer.addWidget(self._about())
         outer.addStretch()
+
+    def _about(self) -> QFrame:
+        card = QFrame()
+        card.setObjectName("card")
+        lay = QHBoxLayout(card)
+        lay.setContentsMargins(20, 18, 20, 18)
+        lay.setSpacing(18)
+        lay.addWidget(BrandMark(56), 0, Qt.AlignmentFlag.AlignTop)
+        col = QVBoxLayout()
+        col.setSpacing(4)
+        head = QHBoxLayout()
+        name = label("Subloc", "brand")
+        name.setStyleSheet("font-size: 19pt;")
+        head.addWidget(name)
+        head.addSpacing(6)
+        head.addWidget(label(tr("Version {v}", v=version()), "muted"), 0, Qt.AlignmentFlag.AlignBottom)
+        head.addStretch()
+        col.addLayout(head)
+        col.addWidget(label("Subtitles for any video, made on your own PC."))
+        col.addWidget(label("Free and open source (GPL-3.0). Your videos and subtitles never leave this computer.",
+                            "faint"))  # fmt: skip
+        col.addSpacing(8)
+        buttons = QHBoxLayout()
+        buttons.setSpacing(8)
+        for text, icon_name, tip, action in (
+            ("GitHub", "external-link", "Opens the project page on GitHub", lambda: self.open_link.emit(GITHUB)),
+            ("Licences", "info", "The licences of Subloc and of what it uses",
+             lambda: self.open_link.emit(f"{GITHUB}/blob/main/THIRD_PARTY_NOTICES.md")),
+            ("Keyboard shortcuts", "keyboard", "", self.shortcuts.emit),
+            ("Check for updates", "refresh-cw", "Asks GitHub for the newest version, only when you press it.",
+             self.check_updates.emit),
+        ):  # fmt: skip
+            b = QPushButton(text)
+            b.setIcon(icons.icon(icon_name, t.TEXT))
+            if tip:
+                b.setToolTip(tip)
+            b.clicked.connect(action)
+            buttons.addWidget(b)
+        buttons.addStretch()
+        col.addLayout(buttons)
+        lay.addLayout(col, 1)
+        return card
 
 
 # ---------------------------------------------------------------- small flow layout for name chips

@@ -53,7 +53,7 @@ def test_every_process_starts_without_a_console_window():
     black window that flashes up and closes, many times per video. All starts must go through subloc/proc.py,
     which hides them. (os.startfile is fine: it opens a file in its default app.)"""
     pkg = Path(__file__).resolve().parent.parent / "subloc"
-    skip = {pkg / "proc.py", pkg / "gui.py"}  # the helper itself; gui.py is the old, unused window
+    skip = {pkg / "proc.py"}  # the helper itself
     offenders = []
     for path in sorted(set(pkg.rglob("*.py")) - skip):
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):

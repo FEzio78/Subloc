@@ -1,11 +1,14 @@
 """Custom-drawn pieces of the interface (see design/mockup.html)."""
 
-from PySide6.QtCore import QPointF, QRectF, Qt, Signal
+from typing import Any, ClassVar
+
+from PySide6.QtCore import QEvent, QObject, QPointF, QPropertyAnimation, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QFontMetricsF, QIcon, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup,
     QComboBox,
     QFrame,
+    QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -14,6 +17,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from . import icons
 from . import theme as t
 from .i18n import rtl, tr
 
@@ -123,8 +127,11 @@ class TopBar(QFrame):
         lay.addSpacing(18)
         self.group = QButtonGroup(self)
         self.buttons: dict[str, QPushButton] = {}
-        for key, text in (("home", "Home"), ("library", "Library"), ("queue", "Queue"), ("settings", "Settings")):
+        nav = (("home", "Home", "house"), ("library", "Library", "library"), ("queue", "Queue", "list-video"),
+               ("settings", "Settings", "settings"))  # fmt: skip
+        for key, text, icon_name in nav:
             b = QPushButton(tr(text))
+            b.setIcon(icons.nav_icon(icon_name))
             b.setObjectName("nav")
             b.setCheckable(True)
             b.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -199,8 +206,10 @@ class DropStrip(QFrame):
         col.addStretch()
         lay.addLayout(col, 1)
         self.folder_btn = QPushButton("Choose folder…")
+        self.folder_btn.setIcon(icons.icon("folder-open", t.TEXT))
         self.video_btn = QPushButton("Choose video…")
         self.video_btn.setObjectName("primary")
+        self.video_btn.setIcon(icons.icon("file-video", t.ACCENT_INK))
         for b in (self.folder_btn, self.video_btn):
             b.setCursor(Qt.CursorShape.PointingHandCursor)
             lay.addWidget(b)
@@ -294,10 +303,10 @@ class StageBox(QFrame):
         lead, trail = ((Qt.AlignmentFlag.AlignRight, Qt.AlignmentFlag.AlignLeft) if self.isRightToLeft()
                        else (Qt.AlignmentFlag.AlignLeft, Qt.AlignmentFlag.AlignRight))  # fmt: skip
         p.drawText(r.adjusted(10, 7, -10, 0), lead | Qt.AlignmentFlag.AlignTop, self.caption)
-        mark = {"done": ("✓", t.OK), "failed": ("✕", t.ERR)}.get(self.state)
+        mark = {"done": ("check", t.OK), "failed": ("x", t.ERR)}.get(self.state)
         if mark:
-            p.setPen(QColor(mark[1]))
-            p.drawText(r.adjusted(10, 7, -10, 0), trail | Qt.AlignmentFlag.AlignTop, mark[0])
+            x = r.left() + 10 if trail == Qt.AlignmentFlag.AlignLeft else r.right() - 10 - 13
+            p.drawPixmap(QPointF(x, r.top() + 8), icons.pixmap(mark[0], mark[1], 13))
         p.setFont(t.font(10, QFont.Weight.Medium))
         p.setPen(QColor(t.ACCENT if now else (t.TEXT if self.state != "waiting" else t.FAINT)))
         p.drawText(r.adjusted(10, 0, -10, -8), lead | Qt.AlignmentFlag.AlignBottom, self.value)
@@ -505,3 +514,157 @@ class FramePreview(QWidget):
                 p.drawText(area.translated(dx, dy), flags, self.text)
             p.setPen(QColor("#ffffff"))
             p.drawText(area, flags, self.text)
+
+
+# ---------------------------------------------------------------- icon + text, message line, toasts
+
+
+class IconText(QWidget):
+    """An icon followed by a label (the label's text is translated like any static label)."""
+
+    def __init__(self, icon_name: str, text: str, color: str = t.MUTED, name: str | None = "muted"):
+        super().__init__()
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(7)
+        mark = QLabel()
+        mark.setPixmap(icons.pixmap(icon_name, color, 15))
+        lay.addWidget(mark)
+        self.text = label(text, name)
+        lay.addWidget(self.text)
+
+
+class Banner(QFrame):
+    """A message line with an icon, coloured by kind: warning, error, ok or info."""
+
+    KINDS: ClassVar[dict[str, tuple[str, str]]] = {
+        "warning": ("triangle-alert", t.WARN),
+        "error": ("circle-x", t.ERR),
+        "ok": ("circle-check", t.OK),
+        "info": ("info", t.MUTED),
+    }
+
+    def __init__(self):
+        super().__init__()
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(8)
+        self.mark = QLabel()
+        self.mark.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.text = QLabel()
+        self.text.setWordWrap(True)
+        self.text.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        lay.addWidget(self.mark)
+        lay.addWidget(self.text, 1)
+        self.hide()
+
+    def say(self, text: str, kind: str = "warning") -> None:
+        name, color = self.KINDS[kind]
+        self.mark.setPixmap(icons.pixmap(name, color, 16))
+        self.text.setText(text)
+        self.text.setStyleSheet(f"color: {color};")
+        self.show()
+
+
+class Toast(QFrame):
+    """A short message at the bottom of the window that goes away by itself; hovering keeps it. Several stack."""
+
+    KINDS: ClassVar[dict[str, tuple[str, str]]] = {
+        "ok": ("circle-check", t.OK),
+        "info": ("info", t.MUTED),
+        "warning": ("triangle-alert", t.WARN),
+        "error": ("circle-x", t.ERR),
+    }
+
+    def __init__(self, window: QWidget, text: str, kind: str = "info", action: tuple[str, Any] | None = None,
+                 secs: float = 4.0):  # fmt: skip
+        super().__init__(window)
+        self.setObjectName("toast")
+        self.window_ = window
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(14, 10, 8, 10)
+        lay.setSpacing(10)
+        name, color = self.KINDS[kind]
+        mark = QLabel()
+        mark.setPixmap(icons.pixmap(name, color, 17))
+        lay.addWidget(mark)
+        msg = QLabel(text)
+        msg.setWordWrap(True)  # only long messages wrap: a wrapping label would otherwise shrink to its narrowest
+        msg.setMinimumWidth(min(msg.fontMetrics().horizontalAdvance(text) + 12, 460))
+        msg.setMaximumWidth(520)
+        lay.addWidget(msg, 1)
+        if action:
+            act = QPushButton(action[0])
+            act.setObjectName("toastAction")
+            act.setCursor(Qt.CursorShape.PointingHandCursor)
+            run = action[1]
+            act.clicked.connect(lambda: self._act(run))
+            lay.addWidget(act)
+        close = QPushButton()
+        close.setObjectName("toastClose")
+        close.setIcon(icons.icon("x", t.MUTED, 14))
+        close.setCursor(Qt.CursorShape.PointingHandCursor)
+        close.clicked.connect(self.close_now)
+        lay.addWidget(close)
+        self.effect = QGraphicsOpacityEffect(self)
+        self.effect.setOpacity(0.0)
+        self.setGraphicsEffect(self.effect)
+        self.fade = QPropertyAnimation(self.effect, b"opacity", self)
+        self.fade.setDuration(180)
+        self.timer = QTimer(self, singleShot=True, interval=int(secs * 1000))
+        self.timer.timeout.connect(self.close_now)
+        window.installEventFilter(self)  # keep the stack in place when the window is resized
+        self.adjustSize()
+        self.show()
+        self.raise_()
+        Toast.relayout(window)
+        self.fade.setStartValue(0.0)
+        self.fade.setEndValue(1.0)
+        self.fade.start()
+        self.timer.start()
+
+    def _act(self, run: Any) -> None:
+        self.close_now()
+        run()
+
+    def enterEvent(self, e):
+        self.timer.stop()
+
+    def leaveEvent(self, e):
+        self.timer.start(1500)
+
+    def close_now(self) -> None:
+        if self.fade.endValue() == 0.0:
+            return
+        self.timer.stop()
+        self.fade.stop()
+        self.fade.setStartValue(self.effect.opacity())
+        self.fade.setEndValue(0.0)
+        self.fade.finished.connect(self._gone)
+        self.fade.start()
+
+    def _gone(self) -> None:
+        self.hide()
+        self.deleteLater()
+        Toast.relayout(self.window_, without=self)
+
+    def eventFilter(self, obj: QObject, e: QEvent) -> bool:
+        if e.type() == QEvent.Type.Resize:
+            Toast.relayout(self.window_)
+        return False
+
+    @staticmethod
+    def relayout(window: QWidget, without: "Toast | None" = None) -> None:
+        """Bottom centre, newest at the bottom."""
+        y = window.height() - 24
+        for toast in reversed([w for w in window.findChildren(Toast) if w is not without and w.isVisible()]):
+            toast.adjustSize()
+            y -= toast.height()
+            toast.move((window.width() - toast.width()) // 2, y)
+            y -= 10
+
+
+def toast(window: QWidget, text: str, kind: str = "info", action: tuple[str, Any] | None = None,
+          secs: float = 4.0) -> Toast:  # fmt: skip
+    """Show a toast over `window`. action = (button text, callable)."""
+    return Toast(window, text, kind, action, secs)

@@ -6,14 +6,17 @@ import contextlib
 import ctypes
 import json
 import os
+import re
 import shutil
 import sys
 import threading
 import time
 from pathlib import Path
+from typing import Any
 
-from PySide6.QtCore import QFileSystemWatcher, QObject, QSettings, QStandardPaths, Qt, QTimer, Signal
-from PySide6.QtGui import QPixmap
+import httpx
+from PySide6.QtCore import QFileSystemWatcher, QObject, QSettings, QStandardPaths, Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QDesktopServices, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -29,9 +32,9 @@ from PySide6.QtWidgets import (
 )
 
 from .. import batch, library, power, proc, recent
-from ..batch import BatchReporter, Item, find_videos, load_queue, run_batch, save_queue
+from ..batch import Item, find_videos, load_queue, save_queue
 from ..burn import burn
-from ..busy import BusyLock, holder
+from ..busy import BusyLock
 from ..catalog import TRANSLATORS
 from ..config import Config
 from ..engine import BuiltinEngine
@@ -51,18 +54,25 @@ from ..pipeline import (
     update_line,
     write_outputs,
 )
+from ..service import version
 from ..style import DEFAULT, PRESETS, SubStyle, write_ass
 from ..subtitles import RTL
+from . import icons
 from . import theme as t
+from .home_ctl import HomeMixin
 from .i18n import rtl, set_language, tr, translate_tree
 from .intro import play as play_intro
+from .library_ctl import LibraryMixin
 from .library_page import LibraryPage
 from .lines import Row
 from .pages import HomePage, JobPage, QueuePage, SettingsPage, select_data
 from .player import available as player_available
+from .queue_ctl import QueueMixin
 from .setup import SetupWizard
+from .shortcuts import SHORTCUTS, ShortcutsDialog
 from .style_dialog import StyleDialog
 from .widgets import TopBar, app_icon, fmt_time
+from .widgets import toast as show_toast
 
 PROGRAM_FILES = [Path(os.environ.get("PROGRAMFILES", "C:/Program Files")),
                  Path(os.environ.get("PROGRAMFILES(X86)", "C:/Program Files (x86)"))]  # fmt: skip
@@ -94,13 +104,14 @@ class Bus(QObject):
     thumb = Signal(str, float)  # video, duration (Home list thumbnail is ready)
     lib_progress = Signal(str)
     lib_scanned = Signal(object)  # library.Scan, or None when stopped
+    update = Signal(str, str)  # latest version tag ("" = none published, "error") and its page
 
 
 def _rows(cues: list[Cue]) -> list[Row]:
     return [Row(c.id, c.start, c.end, c.text, c.translation, c.kind) for c in cues]
 
 
-class MainWindow(QMainWindow):
+class MainWindow(HomeMixin, LibraryMixin, QueueMixin, QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Subloc")
@@ -157,6 +168,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(root)
 
         self._wire()
+        self._bind_shortcuts()
         self._restore()
         self._show_recent()
         self._refresh_queue()
@@ -189,6 +201,7 @@ class MainWindow(QMainWindow):
         b.thumb.connect(self._on_thumb)
         b.lib_progress.connect(self.libp.set_progress)
         b.lib_scanned.connect(self._on_lib_scanned)
+        b.update.connect(self._on_update)
         lp = self.libp
         lp.add_folder.connect(self.add_library_folder)
         lp.refresh.connect(self.refresh_library)
@@ -241,6 +254,13 @@ class MainWindow(QMainWindow):
         s.edit_style.connect(self.edit_style)
         s.run_setup.connect(self.run_setup)
         s.language.connect(self.change_language)
+        s.shortcuts.connect(self.show_shortcuts)
+        s.check_updates.connect(self.check_updates)
+        s.open_link.connect(lambda url: QDesktopServices.openUrl(QUrl(url)))
+
+    def toast(self, text: str, kind: str = "info", action: tuple[str, Any] | None = None, secs: float = 4.0) -> None:
+        """A short message at the bottom of the window that goes away by itself (for things that need no answer)."""
+        show_toast(self, text, kind, action, secs)
 
     def show_page(self, key: str) -> None:
         """Home (new project + recent ones; the running video is listed first), Library, Queue or Settings."""
@@ -259,115 +279,7 @@ class MainWindow(QMainWindow):
             self._library_changed(save=False)
         self.top.select(key)
 
-    # ---------------------------------------------------------------- library
-
-    def _library_changed(self, save: bool = True) -> None:
-        if save:
-            library.save(self.lib)
-        if self.stack.currentWidget() is self.libp:  # otherwise it's drawn when the page is shown
-            self.libp.set_library(self.lib, self.home.tgt.currentData())
-
-    def add_library_folder(self, folder: str) -> None:
-        folder = os.path.normpath(folder)
-        if not library.add_root(self.lib, Path(folder)):
-            msg = tr("{folder} is inside a folder that's already in the library.", folder=folder)
-            QMessageBox.information(self, tr("Already in the library"), msg)
-            return
-        self._library_changed()
-        self._scan(folder, deep=True)  # the first scan; after that only Refresh (or watching) reads it again
-
-    def refresh_library(self, folder: str) -> None:
-        for f in [folder] if folder else self.lib.roots:
-            self._scan(os.path.normpath(f), deep=True)
-
-    def remove_library_root(self, root: str) -> None:
-        if QMessageBox.question(self, tr("Remove from library?"),
-                                tr("{folder} won't be listed any more. Nothing is deleted from your disk.",
-                                   folder=root)) != QMessageBox.StandardButton.Yes:  # fmt: skip
-            return
-        k = recent.key(root)
-        self._scans = [s for s in self._scans if not library.inside(recent.key(s[0]), k)]
-        library.remove_root(self.lib, root)
-        self._library_changed()
-        self._update_watcher()
-
-    def queue_from_library(self, videos: list[str]) -> None:
-        self.add_to_queue([Path(v) for v in videos])
-        self.show_page("queue")
-
-    def _scan(self, folder: str, deep: bool) -> None:
-        if (folder, deep) not in self._scans:
-            self._scans.append((folder, deep))
-        self._next_scan()
-
-    def _next_scan(self) -> None:
-        while self.lib_job is None and self._scans:
-            folder, deep = self._scans.pop(0)
-            if os.path.isdir(folder):
-                self._start_scan(folder, deep)
-            elif deep:  # unplugged drive or deleted: keep what the index knows
-                msg = tr("{folder} can't be reached. Is the drive connected?", folder=folder)
-                QMessageBox.information(self, tr("Folder not found"), msg)
-
-    def _start_scan(self, folder: str, deep: bool) -> None:
-        name = os.path.basename(folder.rstrip("\\/")) or folder
-        bus, cancel, lib, last = self.bus, self.lib_cancel, self.lib, [0.0]
-
-        def progress(stage: str, n: int, total: int) -> None:
-            if time.time() - last[0] > 0.2:
-                last[0] = time.time()
-                bus.lib_progress.emit(
-                    tr("Reading {folder}… {n} videos found", folder=name, n=n) if stage == "files"
-                    else tr("Checking the subtitles inside new videos… {n} of {total}", n=n, total=total))  # fmt: skip
-
-        def work() -> None:
-            try:
-                bus.lib_scanned.emit(library.scan_folder(folder, lib, deep, cancel, progress if deep else None))
-            except Exception:  # stopped, or the folder vanished midway
-                bus.lib_scanned.emit(None)
-
-        if deep:
-            self.libp.set_progress(tr("Reading {folder}…", folder=name))
-        self.lib_job = threading.Thread(target=work, daemon=True)
-        self.lib_job.start()
-
-    def _on_lib_scanned(self, s: library.Scan | None) -> None:
-        self.lib_job = None
-        self.libp.set_progress("")
-        if s is not None and any(library.inside(recent.key(s.folder), recent.key(r)) for r in self.lib.roots):
-            library.apply(self.lib, s)  # (skipped when its folder was removed from the library meanwhile)
-            self._library_changed()
-            self._update_watcher()
-        self._next_scan()
-
-    def set_library_watch(self, on: bool) -> None:
-        self.lib.watch = on
-        library.save(self.lib)
-        self._update_watcher()
-
-    def _update_watcher(self) -> None:
-        want = {recent.key(f): f for f in self.lib.folders if os.path.isdir(f)} if self.lib.watch else {}
-        have = {recent.key(f): f for f in self.watcher.directories()}
-        if old := [p for k, p in have.items() if k not in want]:
-            self.watcher.removePaths(old)
-        if new := [p for k, p in want.items() if k not in have]:
-            self.watcher.addPaths(new)
-
-    def _on_dir_changed(self, folder: str) -> None:
-        self._changed.add(os.path.normpath(folder))
-        self._change_timer.start()
-
-    def _flush_changes(self) -> None:
-        for folder in sorted(self._changed):
-            self._scan(folder, deep=False)  # its own files, plus any new subfolders
-        self._changed.clear()
-
-    def _library_video_done(self, video: Path) -> None:
-        """Subloc wrote subtitles or progress next to a video: update its line in the library."""
-        if library.refresh_video(self.lib, video):
-            self._library_changed()
-
-    # ---------------------------------------------------------------- recent projects
+    # ---------------------------------------------------------------- lists others may change
 
     def _outside_change(self, name: str, path: Path) -> bool:
         """Did the file change since it was last read here? (The command line or an agent may have written it.)"""
@@ -379,84 +291,6 @@ class MainWindow(QMainWindow):
         self._seen[name] = t
         return changed
 
-    def _show_recent(self) -> None:
-        """Refresh summaries whose project file changed (edits, CLI runs), then redraw the list."""
-        if self._outside_change("recent", recent._file()):
-            self.recent = recent.load()
-        changed = [r for r in self.recent if recent.summarize(r)]
-        if changed:
-            recent.save(self.recent)
-        self.home.set_recent(self.recent)
-        self._make_thumbs()
-
-    def _remember(self, video: Path, duration: float = 0.0) -> None:
-        self.recent = recent.touch(self.recent, video, duration)
-        recent.save(self.recent)
-        self.home.set_recent(self.recent)
-        self._make_thumbs()
-
-    def _make_thumbs(self) -> None:
-        """Grab a frame for list rows without a thumbnail, one video after another, off the UI thread."""
-        if self._thumb_job is not None:
-            return
-        todo = [Path(r.video) for r in self.recent if recent.key(r.video) not in self._thumb_tried
-                and not recent.thumb_path(r.video).exists() and r.path.exists()]  # fmt: skip
-        if not todo:
-            return
-        self._thumb_tried.update(recent.key(v) for v in todo)
-        bus = self.bus
-
-        def work() -> None:
-            for v in todo:
-                try:
-                    _, duration = recent.make_thumb(v)
-                    bus.thumb.emit(str(v), duration)
-                except Exception:
-                    pass  # unreadable file: the row keeps its placeholder
-            bus.thumb.emit("", 0.0)  # finished
-
-        self._thumb_job = threading.Thread(target=work, daemon=True)
-        self._thumb_job.start()
-
-    def _on_thumb(self, video: str, duration: float) -> None:
-        if not video:
-            self._thumb_job = None
-            self._make_thumbs()  # videos added while it was working
-            return
-        item = recent.find(self.recent, video)
-        if item and duration and not item.duration:
-            item.duration = duration
-            recent.save(self.recent)
-        self.home.thumb_ready(video)
-
-    def open_recent(self, video: str) -> None:
-        path = Path(video)
-        if self.job is not None and self.video and recent.key(self.video) == recent.key(path):
-            self.stack.setCurrentWidget(self.jobp)  # back to the video being worked on
-            return
-        if path.exists():
-            self.open_video(path)
-            return
-        box = QMessageBox(QMessageBox.Icon.Warning, tr("File not found"),
-                          tr("{name} was moved, renamed or deleted.", name=path.name), parent=self)  # fmt: skip
-        find = box.addButton(tr("Find it…"), QMessageBox.ButtonRole.AcceptRole)
-        forget = box.addButton(tr("Remove from list"), QMessageBox.ButtonRole.DestructiveRole)
-        box.addButton(tr("Cancel"), QMessageBox.ButtonRole.RejectRole)
-        box.exec()
-        if box.clickedButton() is forget:
-            self.forget_recent(video)
-        elif box.clickedButton() is find:
-            start = next((str(d) for d in path.parents if d.exists()), "")
-            found, _ = QFileDialog.getOpenFileName(self, tr("Find {name}", name=path.name), start)
-            if found:
-                self.recent = recent.remove(self.recent, video)
-                self.open_video(Path(found))
-
-    def forget_recent(self, video: str) -> None:
-        self.recent = recent.remove(self.recent, video)
-        recent.save(self.recent)
-        self.home.set_recent(self.recent)
-
     # ---------------------------------------------------------------- settings
 
     def _restore(self) -> None:
@@ -466,6 +300,7 @@ class MainWindow(QMainWindow):
         select_data(self.home.speech, s.value("speech", self.cfg.speech_model))
         select_data(self.settingsp.parallel, s.value("parallel", 2))
         select_data(self.settingsp.glossary, str(s.value("glossary", "true")).lower() != "false")
+        select_data(self.settingsp.intro, "off" if str(s.value("intro", "true")).lower() == "false" else "on")
         self._show_style_name()
 
     def _save(self, *_) -> None:
@@ -476,6 +311,7 @@ class MainWindow(QMainWindow):
         s.setValue("model", self.home.model.currentData())
         s.setValue("parallel", self.settingsp.parallel.currentData())
         s.setValue("glossary", "true" if self.settingsp.glossary.currentData() else "false")
+        s.setValue("intro", "false" if self.settingsp.intro.currentData() == "off" else "true")
 
     def _load_style(self) -> SubStyle:
         raw = self.settings.value("style")
@@ -567,7 +403,7 @@ class MainWindow(QMainWindow):
     def open_paths(self, paths: list[Path]) -> None:
         videos = find_videos(paths)
         if not videos:
-            QMessageBox.information(self, tr("No videos"), tr("Those files aren't videos Subloc can read."))
+            self.toast(tr("Those files aren't videos Subloc can read."), "warning")
             return
         if len(videos) == 1 and not paths[0].is_dir():
             self.open_video(videos[0])
@@ -577,7 +413,7 @@ class MainWindow(QMainWindow):
 
     def open_video(self, video: Path) -> None:
         if self.job is not None:
-            QMessageBox.information(self, tr("Busy"), tr("Wait for the current video to finish, or stop it first."))
+            self.toast(tr("Wait for the current video to finish, or stop it first."), "warning")
             return
         try:
             info = probe(video)
@@ -598,12 +434,13 @@ class MainWindow(QMainWindow):
         j.source.blockSignals(True)
         j.source.clear()
         if info.has_audio:
-            j.source.addItem(tr("🎧  Listen to the speech"), None)
+            j.source.addItem(icons.icon("headphones", t.TEXT), tr("Listen to the speech"), None)
         for track in info.text_subtitles:
             name = track.title or (
                 tr(LANGS.get(track.lang or "", track.lang or "")) or tr("Track {n}", n=track.index + 1)
             )
-            j.source.addItem(tr("📄  Built-in subtitles: {name}", name=name), track.index)
+            j.source.addItem(icons.icon("captions", t.TEXT), tr("Built-in subtitles: {name}", name=name),
+                             track.index)  # fmt: skip
         chosen = subtitle_source(info, self.home.tgt.currentData())
         if chosen is not None:  # people-made subtitles: faster, exact timing
             select_data(j.source, chosen)
@@ -706,8 +543,7 @@ class MainWindow(QMainWindow):
         self.jobp.eta.setText(tr("Stopping…"))
 
     def _on_warn(self, msg: str) -> None:
-        self.jobp.banner.setText("⚠  " + msg)
-        self.jobp.banner.show()
+        self.jobp.banner.say(msg, "warning")
 
     def _on_stage(self, name: str, frac: float, detail: str) -> None:
         st = self.jobp.stages
@@ -808,10 +644,7 @@ class MainWindow(QMainWindow):
         self._job_ended()
         j = self.jobp
         j.set_state("failed")
-        j.banner.setText(("" if msg.startswith("Stopped") else "✕  ") + msg)
-        j.banner.setObjectName("muted" if msg.startswith("Stopped") else "error")
-        j.banner.setStyleSheet("")  # re-apply object-name style
-        j.banner.show()
+        j.banner.say(msg, "info" if self.cancel.is_set() else "error")  # stopped by the user: not an error
         j.eta.setText("")
 
     # ---------------------------------------------------------------- preview
@@ -984,6 +817,85 @@ class MainWindow(QMainWindow):
             j.player.seek(start)
         return True
 
+    # ---------------------------------------------------------------- keyboard
+
+    def _bind_shortcuts(self) -> None:
+        actions: dict[str, Any] = {
+            "open_video": self.home.choose_videos,
+            "open_folder": self.home.choose_folder,
+            "home": lambda: self.show_page("home"),
+            "library": lambda: self.show_page("library"),
+            "queue": lambda: self.show_page("queue"),
+            "settings": lambda: self.show_page("settings"),
+            "play": self._key_play,
+            "start": self._key_start,
+            "search": self._key_search,
+            "refresh": lambda: self.refresh_library("") if self.lib.roots else None,
+            "back": self._key_back,
+            "help": self.show_shortcuts,
+        }
+        for sid, keys, _ in SHORTCUTS:
+            QShortcut(QKeySequence(keys), self).activated.connect(actions[sid])
+
+    def _key_play(self) -> None:
+        j = self.jobp
+        if self.stack.currentWidget() is j and (j.play_btn.isVisible() or j.display.currentWidget() is j.player):
+            self.toggle_play()
+
+    def _key_start(self) -> None:
+        if self.stack.currentWidget() is self.jobp and self.jobp.start_btn.isVisible():
+            self.start_job()
+        elif self.stack.currentWidget() is self.queuep:
+            self.start_queue()
+
+    def _key_search(self) -> None:
+        self.show_page("library")
+        self.libp.search.setFocus()
+        self.libp.search.selectAll()
+
+    def _key_back(self) -> None:
+        if self.stack.currentWidget() is self.jobp and self.jobp.view.editing_id is None:
+            self.show_page("home")
+
+    def show_shortcuts(self) -> None:
+        ShortcutsDialog(self).exec()
+
+    # ---------------------------------------------------------------- updates (only when asked)
+
+    def check_updates(self) -> None:
+        bus = self.bus
+
+        def work() -> None:
+            try:
+                r = httpx.get("https://api.github.com/repos/FEzio78/Subloc/releases/latest", timeout=8,
+                              headers={"Accept": "application/vnd.github+json"})  # fmt: skip
+                if r.status_code == 404:  # nothing published yet
+                    bus.update.emit("", "")
+                    return
+                r.raise_for_status()
+                data = r.json()
+                bus.update.emit(str(data.get("tag_name", "")), str(data.get("html_url", "")))
+            except Exception:
+                bus.update.emit("error", "")
+
+        threading.Thread(target=work, daemon=True).start()
+        self.toast(tr("Checking for updates…"), "info", secs=2)
+
+    def _on_update(self, tag: str, url: str) -> None:
+        if tag == "error":
+            self.toast(tr("Couldn't reach GitHub. Check the internet connection."), "warning")
+            return
+
+        def parts(v: str) -> tuple[int, ...]:
+            return tuple(int(n) for n in re.findall(r"\d+", v)[:3])
+
+        mine = version()
+        if tag and parts(tag) > parts(mine):
+            self.toast(tr("Subloc {v} is available.", v=tag.lstrip("vV")), "ok",
+                       (tr("Download"), lambda: QDesktopServices.openUrl(QUrl(url))), secs=12)  # fmt: skip
+        else:
+            self.toast(tr("You have the latest version ({v}).", v=mine), "ok")
+
     def toggle_play(self) -> None:
         j = self.jobp
         if j.display.currentWidget() is not j.player:
@@ -1001,7 +913,8 @@ class MainWindow(QMainWindow):
             self.jobp.player.play()
 
     def _on_playing(self, playing: bool) -> None:
-        self.jobp.play_btn.setText(tr("❚❚  Pause") if playing else tr("▶  Play with subtitles"))
+        self.jobp.play_btn.setText(tr("Pause") if playing else tr("Play with subtitles"))
+        self.jobp.play_btn.setIcon(icons.icon("pause" if playing else "play", t.ACCENT_INK))
 
     def _on_play_pos(self, sec: float) -> None:
         j = self.jobp
@@ -1054,12 +967,13 @@ class MainWindow(QMainWindow):
         target = proj.target_language or "ar"
         if kind == "ass":
             paths = write_outputs(self.video, proj, target, self.sub_style)
-            reveal(paths[-1])
+            self._saved(paths[-1])
         elif kind == "srt_as":
             src = self.video.with_name(f"{self.video.stem}.{target}.srt")
             dest, _ = QFileDialog.getSaveFileName(self, tr("Save subtitles as"), str(src), tr("Subtitles (*.srt)"))
             if dest:
                 shutil.copyfile(src, dest)
+                self._saved(Path(dest))
         elif kind == "burn":
             self._burn(proj, target)
 
@@ -1099,200 +1013,18 @@ class MainWindow(QMainWindow):
             self._burn_dialog = None
         if err:
             if not err.startswith("Stopped"):
-                QMessageBox.warning(self, "Export", err)
+                QMessageBox.warning(self, tr("Export"), err)
             return
-        reveal(Path(dest))
+        self._saved(Path(dest))
 
-    # ---------------------------------------------------------------- queue
-
-    def add_to_queue_dialog(self) -> None:
-        paths, _ = QFileDialog.getOpenFileNames(
-            self, tr("Add videos"), "", "Videos (*.mp4 *.mkv *.avi *.mov *.webm *.m4v)"
-        )
-        if paths:
-            self.add_to_queue([Path(p) for p in paths])
-
-    def add_to_queue(self, videos: list[Path]) -> None:
-        known = {it.video for it in self.queue}
-        self.queue += [Item(v.resolve()) for v in videos if v.resolve() not in known]
-        self._queue_changed()
-
-    def clear_queue(self) -> None:
-        self.queue = [it for it in self.queue if it.status not in ("done", "skipped", "failed")]
-        self._queue_changed()
-
-    def remove_from_queue(self, i: int) -> None:
-        if self.queue_job is None and 0 <= i < len(self.queue):  # a running queue tracks items by position
-            del self.queue[i]
-            self.queue_progress.clear()
-            self._queue_changed()
-
-    def stop_queue(self) -> None:
-        self.queue_cancel.set()  # (the event is replaced at every start: look it up now, not when wiring)
-
-    def _queue_changed(self) -> None:
-        save_queue(self.queue)
-        self._refresh_queue()
-
-    def _refresh_queue(self) -> None:
-        active = {i: f for i, f in self.queue_progress.items()
-                  if self.queue[i].status in ("listening", "translating")} if self.queue else {}  # fmt: skip
-        self.queuep.set_items([(it.video.name, it.status, it.error) for it in self.queue], active)
-        self.top.set_queue_count(sum(1 for it in self.queue if it.status not in ("done", "skipped")))
-
-    def start_queue(self) -> None:
-        todo = [it.video for it in self.queue if it.status in ("waiting", "stopped", "failed")]
-        if not todo or self.queue_job is not None:
-            return
-        if not self._take_gpu(tr("the queue")):
-            return
-        self._save()
-        opt = self.options()
-        opt.prefer_builtin_subs = True
-        self.queue_cancel = threading.Event()
-        index = {it.video: i for i, it in enumerate(self.queue)}
-        bus = self.bus
-
-        class R(BatchReporter):
-            current = -1
-
-            def item(self, i: int, item: Item) -> None:
-                if item.status in ("listening", "translating"):
-                    self.current = index[todo[i]]
-                bus.queue_item.emit(index[todo[i]], item.status, item.error)
-
-            def stage(self, name: str, frac: float, detail: str = "") -> None:
-                if self.current >= 0 and name in ("transcribe", "translate"):
-                    bus.queue_progress.emit(self.current, frac)
-
-        def work() -> None:
-            try:
-                run_batch(todo, opt, R(), self.queue_cancel)
-            finally:
-                bus.queue_done.emit()
-
-        self.queuep.set_running(True)
-        self.queue_job = threading.Thread(target=work, daemon=True)
-        self.queue_job.start()
-        self._update_awake()
-        self._tray_tip()
-
-    def _on_queue_progress(self, i: int, frac: float) -> None:
-        self.queue_progress[i] = frac
-        self._refresh_queue()
-
-    def _on_queue_item(self, i: int, status: str, error: str) -> None:
-        self.queue_progress.pop(i, None)
-        self.queue[i].status, self.queue[i].error = status, error
-        self._queue_changed()
-        self._tray_tip()
-        if status in ("done", "failed", "stopped"):  # worked on: list it on Home
-            self._remember(self.queue[i].video)
-            self._library_video_done(self.queue[i].video)
-
-    def _on_queue_done(self) -> None:
-        self.queue_job = None
-        self.queuep.set_running(False)
-        self._queue_changed()
-        self._update_awake()
-        if self.queue_cancel.is_set():  # stopped by the user: no message, no sleep or shutdown
-            return
-        done = sum(it.status in ("done", "skipped") for it in self.queue)
-        failed = sum(it.status == "failed" for it in self.queue)
-        self._notify(tr("Queue finished"), tr("{d} videos done · {f} failed", d=done, f=failed) if failed
-                     else tr("All {d} videos are done.", d=done))  # fmt: skip
-        action = self.queuep.when_done.currentData()
-        if action in ("sleep", "shutdown"):
-            self._after_queue(action)
-
-    # ---------------------------------------------------------------- notifications and power
-
-    def _take_gpu(self, what: str) -> bool:
-        """The busy lock: one heavy job at a time on this PC, also across the command line and agents."""
-        if self.busy.acquire(what):
-            return True
-        QMessageBox.information(self, tr("Subloc is busy"), tr("Another Subloc is working: {who}. Try again when "
-                                "it's done.", who=holder() or tr("the command line")))  # fmt: skip
-        return False
-
-    def _update_awake(self) -> None:
-        """Windows mustn't fall asleep in the middle of a long queue (the screen may still turn off)."""
-        working = self.job is not None or self.queue_job is not None
-        power.keep_awake(working)
-        if not working:
-            self.busy.release()
-
-    def _tray_icon(self) -> QSystemTrayIcon | None:
-        if self.tray is None and QSystemTrayIcon.isSystemTrayAvailable():
-            self.tray = QSystemTrayIcon(self.windowIcon(), self)
-            self.tray.messageClicked.connect(self._bring_to_front)
-            self.tray.activated.connect(lambda *_: self._bring_to_front())
-        if self.tray is not None:
-            self.tray.show()
-        return self.tray
-
-    def _tray_tip(self) -> None:
-        """The tray icon shows how far the queue is (hover it)."""
-        tray = self._tray_icon()
-        if tray is not None:
-            done = sum(it.status in ("done", "skipped", "failed") for it in self.queue)
-            tray.setToolTip(tr("Subloc · queue: {d} of {n} finished", d=done, n=len(self.queue)))
-
-    def _notify(self, title: str, text: str) -> None:
-        """A Windows notification, plus the taskbar button flashing until the window is looked at."""
-        tray = self._tray_icon()
-        if tray is not None:
-            tray.showMessage(title, text, self.windowIcon(), 15000)
-        QApplication.alert(self)
-
-    def _bring_to_front(self) -> None:
-        if self.isMinimized():
-            self.showNormal()
-        self.raise_()
-        self.activateWindow()
-
-    def _after_queue(self, action: str) -> None:
-        """Sleep or shut down after a finished queue, with a minute to change one's mind."""
-        sleep = action == "sleep"
-        text = ("The queue is done. The PC will go to sleep in {n} seconds." if sleep
-                else "The queue is done. The PC will shut down in {n} seconds.")  # fmt: skip
-        box = QMessageBox(QMessageBox.Icon.Information, tr("Queue finished"), "", parent=self)
-        now = box.addButton(tr("Sleep now") if sleep else tr("Shut down now"), QMessageBox.ButtonRole.AcceptRole)
-        box.addButton(tr("Cancel"), QMessageBox.ButtonRole.RejectRole)
-        left, fired = [self.countdown_secs], [False]
-        timer = QTimer(box, interval=1000)
-
-        def tick() -> None:
-            if left[0] <= 0:
-                fired[0] = True
-                timer.stop()
-                box.close()
-                return
-            box.setText(tr(text, n=left[0]))
-            left[0] -= 1
-
-        tick()
-        timer.timeout.connect(tick)
-        timer.start()
-        self._bring_to_front()
-        box.exec()
-        timer.stop()
-        select_data(self.queuep.when_done, "nothing")  # once only: the next queue doesn't inherit it
-        if fired[0] or box.clickedButton() is now:
-            self._save()
-            save_queue(self.queue)
-            if sleep:
-                power.sleep()
-            else:
-                if self.engine is not None:
-                    self.engine.stop()
-                power.shut_down()
+    def _saved(self, path: Path) -> None:
+        self.toast(tr("Saved: {name}", name=path.name), "ok", (tr("Show in folder"), lambda: reveal(path)), secs=7)
 
     # ---------------------------------------------------------------- shutdown
 
     def run_setup(self) -> None:
         if self.job is not None or self.queue_job is not None:
-            QMessageBox.information(self, tr("Busy"), tr("Wait for the current video to finish, or stop it first."))
+            self.toast(tr("Wait for the current video to finish, or stop it first."), "warning")
             return
         before = self.cfg.ui_lang
         if not run_setup_flow(self):
@@ -1309,7 +1041,7 @@ class MainWindow(QMainWindow):
         if code == self.cfg.ui_lang and not force:
             return
         if self.job is not None or self.queue_job is not None:
-            QMessageBox.information(self, tr("Busy"), tr("Wait for the current video to finish, or stop it first."))
+            self.toast(tr("Wait for the current video to finish, or stop it first."), "warning")
             return
         self.cfg.ui_lang = code
         self.cfg.save()
@@ -1405,7 +1137,8 @@ def main() -> None:
     w = MainWindow()
     _windows.append(w)
     w.show()
-    play_intro(w)  # Subloc → S → the logo, then the app (a click skips it)
+    if str(QSettings("Subloc", "Subloc").value("intro", "true")).lower() != "false":
+        play_intro(w)  # Subloc → S → the logo, then the app (a click skips it; Settings turns it off)
     args = [Path(a) for a in sys.argv[1:] if Path(a).exists()]
     if args:
         QTimer.singleShot(0, lambda: w.open_paths(args))

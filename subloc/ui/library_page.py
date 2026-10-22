@@ -24,6 +24,7 @@ from ..batch import natural
 from ..langs import LANGS
 from ..library import Library, Video
 from ..recent import key
+from . import icons
 from . import theme as t
 from .i18n import tr
 from .pages import SegControl
@@ -83,6 +84,7 @@ class LibraryPage(QWidget):
         head.addWidget(self.summary)
         head.addStretch()
         self.search = QLineEdit()
+        self.search.addAction(icons.icon("search", t.FAINT), QLineEdit.ActionPosition.LeadingPosition)
         self.search.setPlaceholderText(tr("Search"))
         self.search.setClearButtonEnabled(True)
         self.search.setFixedWidth(200)
@@ -96,10 +98,12 @@ class LibraryPage(QWidget):
                                   "folders. Network drives may not report changes.")  # fmt: skip
         self.watch_box.toggled.connect(self.watch.emit)
         self.refresh_btn = QPushButton("Refresh")
+        self.refresh_btn.setIcon(icons.icon("refresh-cw", t.TEXT))
         self.refresh_btn.setToolTip("Read every library folder again")
         self.refresh_btn.clicked.connect(lambda: self.refresh.emit(""))
         self.add_btn = QPushButton("Add folder…")
         self.add_btn.setObjectName("primary")
+        self.add_btn.setIcon(icons.icon("folder-plus", t.ACCENT_INK))
         self.add_btn.clicked.connect(self.choose_folder)
         for w in (self.search, self.filter, self.watch_box, self.refresh_btn, self.add_btn):
             head.addWidget(w)
@@ -128,6 +132,7 @@ class LibraryPage(QWidget):
         el.addSpacing(10)
         first = QPushButton("Add folder…")
         first.setObjectName("primary")
+        first.setIcon(icons.icon("folder-plus", t.ACCENT_INK))
         first.clicked.connect(self.choose_folder)
         el.addWidget(first, 0, Qt.AlignmentFlag.AlignHCenter)
         el.addStretch(3)
@@ -155,9 +160,11 @@ class LibraryPage(QWidget):
         self.selection = label("", "muted")
         bar.addWidget(self.selection, 1)
         self.open_btn = QPushButton("Open")
+        self.open_btn.setIcon(icons.icon("square-play", t.TEXT))
         self.open_btn.clicked.connect(self._open_selected)
         self.translate_btn = QPushButton("")
         self.translate_btn.setObjectName("primary")
+        self.translate_btn.setIcon(icons.icon("captions", t.ACCENT_INK))
         self.translate_btn.clicked.connect(self._translate_selected)
         bar.addWidget(self.open_btn)
         bar.addWidget(self.translate_btn)

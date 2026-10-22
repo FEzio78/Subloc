@@ -76,3 +76,9 @@ ignore = [
 python_version = "3.12"
 ignore_missing_imports = true
 check_untyped_defs = true
+
+# The main window's parts (mixins) annotate self as MainWindow so their bodies are fully checked; mypy only
+# objects that MainWindow isn't a base of the mixin, which is the point of a mixin.
+[[tool.mypy.overrides]]
+module = ["subloc.ui.home_ctl", "subloc.ui.library_ctl", "subloc.ui.queue_ctl"]
+disable_error_code = ["misc"]
