@@ -232,3 +232,48 @@ def label(cues: list[Cue], audio: np.ndarray, turns: list[Turn], model: GenderMo
         sp = info["p_female"] if info and info["seconds"] >= MIN_SPEAKER else None
         c.gender = decide(p, sp)
     return speakers
+
+
+# ---------------------------------------------------------------- scenes and who is in them (for translation)
+
+SCENE_GAP = 5.0  # seconds without speech start a new scene
+SURE_SHARE = 2 / 3  # a speaker's lines must agree this much for the speaker to count as a man / a woman
+
+
+def has_voices(cues: list[Cue]) -> bool:
+    return any(c.speaker for c in cues)
+
+
+def scenes(cues: list[Cue]) -> list[int]:
+    """Scene number (1, 2…) for each cue: a pause of SCENE_GAP or more starts a new one."""
+    out, n, last_end = [], 0, None
+    for c in cues:
+        if last_end is None or c.start - last_end >= SCENE_GAP:
+            n += 1
+        out.append(n)
+        last_end = c.end if last_end is None else max(last_end, c.end)
+    return out
+
+
+def speaker_genders(cues: list[Cue]) -> dict[str, str | None]:
+    """Each speaker's voice over the whole video: "male" / "female" when SURE_SHARE of its known lines agree."""
+    votes: dict[str, list[str]] = {}
+    for c in cues:
+        if c.speaker:
+            votes.setdefault(c.speaker, [])
+            if c.gender:
+                votes[c.speaker].append(c.gender)
+    out: dict[str, str | None] = {}
+    for s, v in votes.items():
+        top = max(("male", "female"), key=v.count) if v else None
+        out[s] = top if top and v.count(top) >= SURE_SHARE * len(v) else None
+    return out
+
+
+def roster(cues: list[Cue], scene_of: list[int]) -> dict[int, list[str]]:
+    """scene → its speakers in order of first line."""
+    out: dict[int, list[str]] = {}
+    for c, s in zip(cues, scene_of, strict=True):
+        if c.speaker and c.speaker not in out.setdefault(s, []):
+            out[s].append(c.speaker)
+    return out

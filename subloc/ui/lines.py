@@ -32,6 +32,7 @@ class Row:
     kind: str = "dialogue"
     speaker: str | None = None  # "S1"… (subloc.voices)
     gender: str | None = None  # "male" | "female" | None
+    to: str | None = None  # who the translator thinks the line is spoken to: "S2" | "several"
 
 
 class LinesModel(QAbstractListModel):
@@ -104,6 +105,8 @@ def voice_lines(row: Row) -> list[str]:
     out = [row.speaker] if row.speaker else []
     if row.gender in VOICE:
         out.append(tr(VOICE[row.gender]))
+    if row.to:
+        out.append(tr("to group") if row.to == "several" else tr("to {who}", who=row.to))
     return out
 
 

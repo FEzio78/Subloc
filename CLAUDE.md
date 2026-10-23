@@ -94,11 +94,12 @@ PATH from its first runtime hook (`installer/rth_system_path.py`): other program
 
 ## Next
 
-1. **Speakers and who is spoken to** (on `dev`): design + results in PLAN.md 2.7. Step (a) is built
-   (`voices.py`: Nemotron via bundled nemo-speech Vulkan + one ONNX gender classifier; per-line speaker/gender
-   saved and shown in Lines; not sent to the translator). Next: the user tests it in the app; then step (b),
-   scene roster + a `to` field in translation, measured on videos with official Arabic subtitles; the hard
-   part is the addressee's gender (هل تريد / هل تريدين).
+1. **Speakers and who is spoken to** (on `dev`): design + results in PLAN.md 2.7. Built: (a) `voices.py`
+   (Nemotron via bundled nemo-speech Vulkan + one ONNX gender classifier; per-line speaker/gender, shown in
+   Lines) and (b) translation with scenes, speakers, voices and a `to` field (synthetic test en→ar: Gemma 26B
+   12–13 → 21–22 of 22 lines right, E4B 10 → 19–21). Next: the user tests translation in the app; then (c) name
+   ↔ voice in the glossary, (d) one-click fix of the listener, (e) deep-context mode; a scored test on a video
+   with official Arabic subtitles when one is available.
 2. Code signing (SmartScreen warns on the unsigned installer); a test on a clean PC (no Python, no Subloc).
 3. Later: one running copy at a time (a second launch hands its files to the first), reading burned-in subtitles
    (research notes in PLAN.md §2.2), live captions for system audio, CapCut-style animated captions, more UI

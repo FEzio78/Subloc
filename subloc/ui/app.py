@@ -109,7 +109,7 @@ class Bus(QObject):
 
 
 def _rows(cues: list[Cue]) -> list[Row]:
-    return [Row(c.id, c.start, c.end, c.text, c.translation, c.kind, c.speaker, c.gender) for c in cues]
+    return [Row(c.id, c.start, c.end, c.text, c.translation, c.kind, c.speaker, c.gender, c.to) for c in cues]
 
 
 class MainWindow(HomeMixin, LibraryMixin, QueueMixin, QMainWindow):

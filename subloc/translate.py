@@ -6,6 +6,7 @@ import threading
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 
 from .errors import ContextTooLong, ModelNotAvailable, TranslatorUnavailable
 from .glossary import Glossary
@@ -13,6 +14,7 @@ from .langs import LANGS, NUMBERS_RULE, TARGET_BRIEF, clean_output, lang_name
 from .llm import LMStudio
 from .models import Cue
 from .segment import continuation_flags, max_chars
+from .voices import has_voices, roster, scenes, speaker_genders
 
 BATCH = 25
 CONTEXT_BEFORE = 8
@@ -22,35 +24,52 @@ PARALLEL = 2  # concurrent requests by default: gentle on VRAM next to a ~16 GB 
 MAX_PARALLEL = 4  # user can raise it; 4 was ~2.3x throughput when VRAM had room
 
 
-def schema_for(batch: list[Cue]) -> dict:
+TO_OTHER = ["several", "unknown"]  # "to" besides a speaker id
+
+
+def schema_for(batch: list[Cue], to: list[str] | None = None) -> dict:
     """Response format for one request. The server enforces it while generating, so the model can't
     stop after the first line (it did, reproducibly, on some batches: 0/3 complete answers without
     the item count, 3/3 with it) and can't invent ids. "src" (the line's first words, copied) anchors
-    each translation to its own line and lets _parse detect lines that slid onto a neighbour."""
+    each translation to its own line and lets _parse detect lines that slid onto a neighbour.
+    With `to` (the speaker ids in these scenes), each item first names who the line is spoken to: deciding the
+    addressee before writing makes the model pick the right gender and number for "you". Then every position gets
+    its own schema (prefixItems: llama.cpp, so LM Studio and the built-in translator, enforce it; with `items`
+    beside it they ignore it): its own id, and a "to" that can't be the line's own speaker (small models chose
+    that on messy speaker labels)."""
     ids = [c.id for c in batch]
-    return {
-        "type": "object",
-        "properties": {
-            "lines": {
-                "type": "array",
-                "minItems": len(ids),
-                "maxItems": len(ids),
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "id": {"type": "integer", "enum": ids},
-                        "src": {"type": "string"},
-                        "text": {"type": "string"},
-                    },
-                    "required": ["id", "src", "text"],
-                },
-            }
-        },
-        "required": ["lines"],
-    }
+
+    def item(id_enum: list[int], to_enum: list[str] | None) -> dict:
+        props: dict = {"id": {"type": "integer", "enum": id_enum}, "src": {"type": "string"}}
+        if to_enum is not None:
+            props["to"] = {"type": "string", "enum": to_enum}
+        props["text"] = {"type": "string"}
+        return {"type": "object", "properties": props, "required": list(props)}
+
+    lines: dict = {"type": "array", "minItems": len(ids), "maxItems": len(ids)}
+    if to is None:
+        lines["items"] = item(ids, None)
+    else:
+        lines["prefixItems"] = [item([c.id], [s for s in to if s != c.speaker] + TO_OTHER) for c in batch]
+    return {"type": "object", "properties": {"lines": lines}, "required": ["lines"]}
 
 
-def _system(src: str, tgt: str, tgt_code: str, title: str | None) -> str:
+VOICES_RULE = (
+    ' Lines may say who speaks ("speaker", e.g. "S1") and how the voice sounds ("voice": "man" or "woman", '
+    'measured from the audio; missing = not known); "people" lists who speaks in each scene. For every line, '
+    'first decide who it is spoken to and put that in "to": a speaker id, "several" when it speaks to more than '
+    'one person, or "unknown" (also when it speaks to nobody in particular). Then translate it accordingly: '
+    'words for the listener (you, your, commands) take the gender and number of the person in "to" (a woman: '
+    "feminine forms; several people: plural), and words about the speaker (I am tired, I am sure) take the "
+    "speaker's own voice. \"to\" is never the line's own speaker. Clues: in a scene with two speakers each talks "
+    "to the other; the next person to speak is usually the one who was addressed; a name said to someone names "
+    "the listener. People who listen without speaking are not in the list: a line to a group, team or crowd "
+    '("all of you", "guys", "everyone", or a speech) is "several", and so are the lines after it until someone '
+    "else is clearly addressed. When the listener or their gender is unknown, use the masculine singular."
+)
+
+
+def _system(src: str, tgt: str, tgt_code: str, title: str | None, voices: bool = False) -> str:
     s = (
         f"You translate video subtitles from {src} into {tgt}. "
         f"Each input line is one subtitle shown on screen. Keep the speaker's tone (casual, rude, polite, joking). "
@@ -69,6 +88,8 @@ def _system(src: str, tgt: str, tgt_code: str, title: str | None) -> str:
         ' Resolve pronouns, grammatical number and gender from context: if "you" addresses several people '
         "use the plural form; if it addresses one person, match that person's gender when the context shows it."
     )
+    if voices:
+        s += VOICES_RULE
     if title:
         s += f"\n\nThe video is titled: {title}"
     return s
@@ -88,14 +109,56 @@ def _batches(cues: list[Cue]) -> list[list[Cue]]:
     return out
 
 
+VOICE = {"male": "man", "female": "woman"}
+
+
+@dataclass
+class Who:
+    """Who speaks (subloc.voices): each cue's scene, who speaks in each scene, each speaker's overall voice."""
+
+    scene: dict[int, int]  # cue id → scene number
+    people: dict[int, list[str]]  # scene → speaker ids
+    voice: dict[str, str | None]  # speaker → "male" / "female" / None
+
+    @classmethod
+    def of(cls, cues: list[Cue]) -> "Who | None":
+        if not has_voices(cues):
+            return None
+        scene_of = scenes(cues)
+        return cls({c.id: n for c, n in zip(cues, scene_of, strict=True)}, roster(cues, scene_of),
+                   speaker_genders(cues))  # fmt: skip
+
+    def speakers_in(self, batch: list[Cue]) -> list[str]:
+        out: list[str] = []
+        for n in dict.fromkeys(self.scene[c.id] for c in batch):
+            out += [s for s in self.people.get(n, []) if s not in out]
+        return out
+
+    def people_text(self, batch: list[Cue]) -> str:
+        rows = []
+        for n in dict.fromkeys(self.scene[c.id] for c in batch):
+            names = [f"{s} ({VOICE[g]})" if (g := self.voice.get(s)) else s for s in self.people.get(n, [])]
+            rows.append(f"scene {n}: " + (", ".join(names) or "nobody known"))
+        return "People speaking (voice from the audio):\n" + "\n".join(rows)
+
+
+def _tag(c: Cue, who: "Who | None") -> str:
+    return f"[{c.speaker}] " if who is not None and c.speaker else ""
+
+
 def _user(batch: list[Cue], before: list[Cue], after: list[Cue], continues: dict[int, bool], src: str, tgt: str,
-          tgt_code: str | None = None) -> str:  # fmt: skip
-    """`continues`: cue id → is the rest of the previous cue's sentence (see continuation_flags)."""
+          tgt_code: str | None = None, who: Who | None = None) -> str:  # fmt: skip
+    """`continues`: cue id → is the rest of the previous cue's sentence (see continuation_flags).
+    `who`: speakers and voices; then each line says who speaks and the answer says who it is spoken to."""
     lines = []
     for c in batch:
-        item = {"id": c.id, "max_chars": max_chars(c, tgt_code), "text": c.text}
-        # Speakers and voices (subloc.voices) aren't sent yet: that comes with scenes and the addressee, measured
-        # against real subtitles first (PLAN.md 2.7, step b).
+        item: dict = {"id": c.id, "max_chars": max_chars(c, tgt_code), "text": c.text}
+        if who is not None:
+            item["scene"] = who.scene[c.id]
+            if c.speaker:
+                item["speaker"] = c.speaker
+            if c.gender in VOICE:
+                item["voice"] = VOICE[c.gender]
         if c.lang and src == LANGS["mixed"]:
             item["lang"] = lang_name(c.lang)
         if c.kind in ("song", "caption"):
@@ -108,16 +171,24 @@ def _user(batch: list[Cue], before: list[Cue], after: list[Cue], continues: dict
     if before:
         # Pairs when the previous batch is already done; source only when it is being translated in parallel.
         prev = "\n".join(
-            f"{src}: {c.text}\n{tgt}: {c.translation}" if c.translation else f"{src}: {c.text}" for c in before
+            f"{_tag(c, who)}{src}: {c.text}\n{tgt}: {c.translation}"
+            if c.translation
+            else f"{_tag(c, who)}{src}: {c.text}"
+            for c in before
         )
         parts.append(f"CONTEXT ONLY — previous lines, do not translate or repeat:\n{prev}")
     if after:
-        parts.append("CONTEXT ONLY — upcoming lines, do not translate:\n" + "\n".join(c.text for c in after))
+        parts.append("CONTEXT ONLY — upcoming lines, do not translate:\n"
+                     + "\n".join(_tag(c, who) + c.text for c in after))  # fmt: skip
+    if who is not None:
+        parts.append(who.people_text(batch))
     parts.append(
         f"Translate every line below into {tgt}. Return exactly one output item per id, same ids, "
         f"in the same order. Never merge several ids into one item and never skip an id.\n"
         f"For each item, first copy the first few words (up to 12 characters) of THAT line's original text into "
-        f'"src", then write its translation in "text". Each translation must say what its own line says.\n'
+        f'"src", '
+        + ('then who the line is spoken to in "to", ' if who is not None else "")
+        + f'then write its translation in "text". Each translation must say what its own line says.\n'
         f'Lines marked "continues": true finish the previous line\'s sentence (common in {src}, where the verb '
         f"comes last): translate the sentence as a whole, but keep each part's meaning in its own id; move words "
         f"between those lines only where {tgt} grammar requires it.\n\n" + "\n".join(lines)
@@ -146,6 +217,19 @@ def _items(content: str) -> list[tuple[int, str, str]]:
         try:
             out.append((int(x["id"]), str(x.get("src", "")).strip(), str(x["text"]).strip()))
         except (KeyError, TypeError, ValueError):
+            continue
+    return out
+
+
+def _targets(content: str) -> dict[int, str]:
+    """id → "to" (who the line is spoken to), from an answer that has it."""
+    out = {}
+    for obj in _OBJ.findall(content):
+        try:
+            x = json.loads(obj)
+            if x.get("to"):
+                out[int(x["id"])] = str(x["to"])
+        except (ValueError, KeyError, TypeError, AttributeError):
             continue
     return out
 
@@ -196,7 +280,8 @@ def translate(
 ) -> None:
     """Fill cue.translation in place. Skips cues already translated (resume)."""
     src, tgt = lang_name(src_code), lang_name(tgt_code)
-    system = _system(src, tgt, tgt_code, title)
+    who = Who.of(cues)  # speakers and voices known (subloc.voices): the answer also says who each line is to
+    system = _system(src, tgt, tgt_code, title, voices=who is not None)
     pos = {c.id: i for i, c in enumerate(cues)}
     flags = {c.id: f for c, f in zip(cues, continuation_flags(cues), strict=True)}
 
@@ -207,7 +292,7 @@ def translate(
         ids = {c.id for c in batch}
         # Only mark a continuation when the cue it continues is in this same request.
         cont = {c.id: flags[c.id] and pos[c.id] > 0 and cues[pos[c.id] - 1].id in ids for c in batch}
-        user = _user(batch, before, after, cont, src, tgt, tgt_code)
+        user = _user(batch, before, after, cont, src, tgt, tgt_code, who)
         if glossary:
             # Only the names that occur here (glossary may be large; keeps prompts small and focused).
             names = glossary.relevant(" ".join(c.text for c in [*before, *batch, *after]))
@@ -219,8 +304,15 @@ def translate(
                     f"name in a line, it was probably a misheard ordinary word, so translate the meaning.\n\n{user}"
                 )
         msgs = [{"role": "system", "content": system}, {"role": "user", "content": user}]
-        raw = client.chat(model, msgs, json_schema=schema_for(batch), temperature=0.3, reasoning="none")
-        return {i: clean_output(t, tgt_code) for i, t in _parse(raw, batch).items()}
+        to = who.speakers_in(batch) if who is not None else None
+        raw = client.chat(model, msgs, json_schema=schema_for(batch, to), temperature=0.3, reasoning="none")
+        got = {i: clean_output(t, tgt_code) for i, t in _parse(raw, batch).items()}
+        if who is not None:
+            targets = _targets(raw)
+            for c in batch:
+                if c.id in got:
+                    c.to = None if targets.get(c.id, "unknown") == "unknown" else targets[c.id]
+        return got
 
     def call_fitting(batch: list[Cue]) -> dict[int, str]:
         """call(), halving the batch whenever it doesn't fit the model's context window."""

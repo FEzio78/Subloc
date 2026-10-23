@@ -113,7 +113,7 @@ Video ─ffmpeg─► │ 16 kHz mono → VAD (skip music/silence)     │
 
 ---
 
-### 2.7 Speakers and who is spoken to (research 2026-10-22; step (a) built 2026-10-24 on `dev`)
+### 2.7 Speakers and who is spoken to (research 2026-10-22; steps (a) and (b) built 2026-10-24 on `dev`)
 
 **Problem.** English "do you want this?" is هل تريد هذا؟ to a man and هل تريدين هذا؟ to a woman, أتريدان/أتريدون/
 أتريدن for two or a group. The speaker's own gender matters less (أنا متعب/متعبة) than the **addressee's**, which
@@ -180,6 +180,22 @@ in the glossary; (d) one-click fix; (e) deep-context mode.
 - First real runs: Turkish couple 4.2 min → 3 speakers, voice known on 93/94 lines, 5 s; Conan 6.5 min →
   6 speakers incl. one woman (37/42 of her lines female), 204/205 known, 7 s.
 
+**Step (b) built (2026-10-24, `translate.py`):** only when a project has voices (else requests are unchanged).
+- Scenes = a pause of ≥ 5 s (`voices.scenes`); each request lists the people per scene with their overall voice
+  ("scene 3: S1 (man), S2 (woman)", 2/3 of a speaker's lines must agree); each line carries `scene`, `speaker`,
+  `voice`; context lines are prefixed `[S1]`. The answer has `to` (a speaker / `several` / `unknown`) before
+  `text`, saved as `Cue.to` and shown in Lines ("to S2"). Rule text: `translate.VOICES_RULE`.
+- Answer format: one schema per position (`prefixItems`) so `to` can't be the line's own speaker. llama.cpp
+  (LM Studio, built-in) enforces prefixItems only without `items` beside it (tested: with both, `items` wins).
+- **Measured** (synthetic English scenes with known truth, 22 lines whose Arabic depends on the listener's or
+  speaker's gender/number: couple, two sisters, coach + team, woman asking a man, two men), en → ar:
+  Gemma 4 26B: before 12–13/22, after 21–22/22 (149/154 over 7 runs; general schema 215/220, same within
+  noise); with messy voices (a third unknown, 2 lines on the wrong speaker) 21–22/22. Gemma 4 E4B: before
+  10/22, after 19–21/22, messy 19–20/22 (17–19 with the general schema). Remaining misses: the right `to` but
+  a masculine verb now and then; E4B names the one speaking player when a coach talks to his team.
+- Real clip (Turkish couple → ar): the man's lines go to the woman (48/63), e.g. هل أنت مستعد؟ → هل أنتِ مستعدة؟.
+- Not done: scoring against official Arabic subtitles (no such test video yet); shot changes as scene cuts.
+
 ## 3. Data model
 
 ```python
@@ -191,6 +207,7 @@ Cue:
   kind: "dialogue" | "caption" | "sfx" | "narration"
   speaker: str | None   # "S1"… (voices)
   gender: str | None    # voice: "male" | "female" | None (voices)
+  to: str | None        # who the line is spoken to, as the translator decided: "S2" | "several" | None
   text: str             # source language
   translation: str | None
   words: list[Word]     # from ASR, optional

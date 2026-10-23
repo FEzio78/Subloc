@@ -201,7 +201,7 @@ def read_lines(video: Path, offset: int = 0, limit: int = 200) -> dict:
             "total": len(proj.cues), "offset": offset,
             "speakers": proj.meta.get("voices", {}).get("speakers", {}),
             "lines": [{"id": c.id, "start": round(c.start, 2), "end": round(c.end, 2), "text": c.text,
-                       "translation": c.translation, "speaker": c.speaker, "gender": c.gender}
+                       "translation": c.translation, "speaker": c.speaker, "gender": c.gender, "to": c.to}
                       for c in lines]}  # fmt: skip
 
 

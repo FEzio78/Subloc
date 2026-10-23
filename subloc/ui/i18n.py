@@ -327,6 +327,8 @@ AR: dict[str, str] = {
     "Speakers…": "المتحدثون…",
     "man": "رجل",
     "woman": "امرأة",
+    "to {who}": "إلى {who}",
+    "to group": "للمجموعة",
     "Speakers and voices · who speaks, man or woman": "المتحدثون وأصواتهم · من يتكلم، رجل أم امرأة",
     "On (recommended)": "مفعّل (مُوصى به)",
     "Off": "معطّل",

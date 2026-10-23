@@ -23,6 +23,7 @@ class Cue:
     kind: str = "dialogue"  # dialogue | caption | sfx | narration | song
     speaker: str | None = None  # "S1", "S2"… (subloc.voices), None = not known
     gender: str | None = None  # the voice: "male" | "female" | None (not known; subloc.voices)
+    to: str | None = None  # who the line is spoken to, as the translator decided: "S2" | "several" | None
     translation: str | None = None
     words: list[Word] = field(default_factory=list)
     confidence: float = 1.0

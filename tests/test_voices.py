@@ -151,10 +151,75 @@ def test_voices_step_runs_once_per_set_of_lines_and_never_fails_the_job(monkeypa
     assert warnings and "not affected" in warnings[0]
 
 
-def test_speaker_voices_are_not_sent_to_the_translator_yet():
-    from subloc.translate import _user
+def voiced(spec):
+    """Cues from (start, speaker, gender, text)."""
+    out = []
+    for i, (start, spk, g, text) in enumerate(spec, 1):
+        c = cue(i, start, start + 2)
+        c.text, c.speaker, c.gender = text, spk, g
+        out.append(c)
+    return out
 
-    c = cue(1, 0, 2)
-    c.speaker, c.gender = "S1", "female"
-    text = _user([c], [], [], {}, "English", "Arabic", "ar")
-    assert "S1" not in text and "female" not in text
+
+def test_scenes_split_at_long_pauses_and_list_their_speakers():
+    cs = voiced([(0, "S1", "male", "a"), (3, "S2", "female", "b"), (20, "S3", "female", "c"), (23, "S1", "male", "d")])
+    assert voices.scenes(cs) == [1, 1, 2, 2]
+    assert voices.roster(cs, voices.scenes(cs)) == {1: ["S1", "S2"], 2: ["S3", "S1"]}
+
+
+def test_a_speakers_voice_needs_most_of_its_lines_to_agree():
+    cs = voiced([(0, "S1", "male", "a"), (3, "S1", "male", "b"), (6, "S1", "female", "c"), (9, "S2", "male", "d"),
+                 (12, "S2", "female", "e"), (15, "S3", None, "f")])  # fmt: skip
+    assert voices.speaker_genders(cs) == {"S1": "male", "S2": None, "S3": None}
+
+
+def test_without_voices_the_request_and_answer_format_stay_as_before():
+    from subloc.translate import Who, _user, schema_for
+
+    cs = [cue(1, 0, 2), cue(2, 3, 5)]
+    assert Who.of(cs) is None
+    text = _user(cs, [], [], {}, "English", "Arabic", "ar")
+    assert '"speaker"' not in text and "People speaking" not in text and '"to"' not in text
+    lines = schema_for(cs)["properties"]["lines"]
+    assert "prefixItems" not in lines and list(lines["items"]["properties"]) == ["id", "src", "text"]
+
+
+def test_with_voices_each_line_says_who_speaks_and_the_cast_is_listed():
+    from subloc.translate import Who, _user
+
+    cs = voiced([(0, "S1", "male", "Are you hungry?"), (3, "S2", "female", "No."), (20, "S3", None, "Hi.")])
+    who = Who.of(cs)
+    text = _user(cs[1:], cs[:1], [], {}, "English", "Arabic", "ar", who)
+    first = json.loads(next(line for line in text.splitlines() if line.startswith('{"id": 2')))
+    assert first["speaker"] == "S2" and first["voice"] == "woman" and first["scene"] == 1
+    assert "[S1] English: Are you hungry?" in text  # context lines say who said them
+    assert "scene 1: S1 (man), S2 (woman)" in text and "scene 2: S3" in text
+    assert 'who the line is spoken to in "to"' in text
+
+
+def test_the_listener_can_never_be_the_lines_own_speaker():
+    from subloc.translate import Who, schema_for
+
+    cs = voiced([(0, "S1", "male", "a"), (3, "S2", "female", "b")])
+    lines = schema_for(cs, Who.of(cs).speakers_in(cs))["properties"]["lines"]
+    assert "items" not in lines  # beside prefixItems, llama.cpp would ignore the per-line rules
+    first, second = lines["prefixItems"]
+    assert first["properties"]["id"]["enum"] == [1] and second["properties"]["id"]["enum"] == [2]
+    assert first["properties"]["to"]["enum"] == ["S2", "several", "unknown"]
+    assert second["properties"]["to"]["enum"] == ["S1", "several", "unknown"]
+    assert list(first["properties"]) == ["id", "src", "to", "text"]  # the listener is decided before writing
+
+
+def test_the_translators_listener_is_kept_on_each_line():
+    from subloc.translate import translate
+
+    class LLM:
+        def chat(self, model, messages, json_schema=None, temperature=0.2, reasoning="none"):
+            assert "prefixItems" in json_schema["properties"]["lines"]
+            assert "first decide who it is spoken to" in messages[0]["content"]
+            return json.dumps({"lines": [{"id": 1, "src": "Are", "to": "S2", "text": "هل أنتِ جائعة؟"},
+                                         {"id": 2, "src": "No", "to": "unknown", "text": "لا."}]})  # fmt: skip
+
+    cs = voiced([(0, "S1", "male", "Are you hungry?"), (3, "S2", "female", "No.")])
+    translate(cs, LLM(), "m", "en", "ar", log=lambda m: None, workers=1)
+    assert [(c.to, c.translation) for c in cs] == [("S2", "هل أنتِ جائعة؟"), (None, "لا.")]
