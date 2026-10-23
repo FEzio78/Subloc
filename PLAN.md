@@ -113,6 +113,55 @@ Video ─ffmpeg─► │ 16 kHz mono → VAD (skip music/silence)     │
 
 ---
 
+### 2.7 Speakers and who is spoken to (research done 2026-10-22, not built)
+
+**Problem.** English "do you want this?" is هل تريد هذا؟ to a man and هل تريدين هذا؟ to a woman, أتريدان/أتريدون/
+أتريدن for two or a group. The speaker's own gender matters less (أنا متعب/متعبة) than the **addressee's**, which
+the audio alone never gives. Idea (the user's): transcribe first, then translate with context + who speaks + who
+is present (male/female) + same scene or not.
+
+**Experiment** (scratch, not in repo; 64 s synthetic 5-voice scene with truth + two real Korean clips, 6.5 and
+9.2 min, processed locally only):
+- **NVIDIA Nemotron 3 Diarization** (OpenMDW-1.1, not gated, max 8 speakers) via **NeMo-Speech.cpp v0.2.0**
+  (Apache-2.0, ggml, Windows CUDA/Vulkan/CPU builds, `Nemotron-3-Diarization.q8_0.gguf`):
+  `nemo-speech diarize WAV --model GGUF --device cuda --format json --preset v3-streaming --onset 0.4 --offset 0.35`.
+  Synthetic: 22/24 lines right, 0 missed (defaults 20/24; v3-offline 19; full attention 10). Real: 7 and 5
+  speakers. Speed: GPU 3.6 s / 5.5 s per clip, CPU ~4x real time.
+- **sherpa-onnx** (pyannote seg 3.0 + TitaNet or CAM++ + clustering): 16–18/24 synthetic, and badly over-splits
+  real audio (24–99 "speakers", <45% agreement with Nemotron at any threshold). Rejected.
+- pyannote models are gated (HF account), audeering gender model is non-commercial: both excluded.
+- **Gender:** Common-Voice-Gender-Detection-ONNX (Apache; 0=female, normalized input), voice-gender-classifier-
+  onnx-q8-v2 (MIT; 1=female, raw input), autocorrelation pitch (>165 Hz). 5/5 on synthetic; on real voices they
+  disagree for ~half the speakers (all agree on low voices; at 220–260 Hz classifier B + pitch say female,
+  classifier A leans male).
+- **User's listening check (Korean clips):** gender is right; *who* speaks is unreliable when many talk at once.
+
+**Design (proposal):**
+1. **Per-line voice facts, not just clusters.** Each line gets `gender` (+ confidence, from that line's own
+   audio, all methods must agree, else unknown) and `speaker` (Nemotron label, optional, may be wrong in crowds).
+   Gender per line is the robust part; speaker identity is a bonus.
+2. **Scenes.** Split by shot changes (ffmpeg `select='gt(scene,0.4)'`) + long silences + change in the set of
+   speakers. Each scene has a roster: `S1 male, S2 female, S3 male?`.
+3. **Translate per scene** with lines tagged `{id, speaker, gender, text}` and the roster, and ask the LLM for an
+   extra JSON field `to`: a speaker id / `group` / `unknown`, before `text` (forces it to decide the addressee
+   first; the existing enforced JSON + id checks stay). Cheap rules first: two people in a scene → the addressee
+   is the other one; the next speaker after a question is usually the addressee.
+4. **Clues already in the source:** Korean 오빠/형/언니/누나 encode speaker *and* addressee gender, honorifics give
+   relationships; Spanish/French/Russian/Arabic sources mark gender in adjectives/verbs; names in the vocative
+   ("Minji, …") + the next speaker → link name ↔ voice ↔ gender and store it in the folder glossary
+   (Minji = female) so later episodes know.
+5. **When unsure:** fall back to the masculine/generic form (the MSA convention), never guess feminine on weak
+   evidence. Mark such lines in the Lines view; one click flips the addressee (male/female/group) and
+   re-translates just that line.
+6. **Optional "deep context" mode:** a first LLM pass reads the whole scene and writes who-is-who, names,
+   relationships and the addressee per line; the second pass translates with it (about 2x LLM time).
+7. Later, heavy: faces / active speaker on screen (lip movement) to tell who speaks and who listens.
+
+**Order:** (a) bundle nemo-speech + the GGUF (Setup download, licence notices) and save per-line speaker/gender
+in the project, shown in Lines, no translation change; (b) scene roster + `to` field in translation, measured on
+real videos that have official Arabic subtitles (score only the second-person lines, locally); (c) name ↔ voice
+in the glossary; (d) one-click fix; (e) deep-context mode.
+
 ## 3. Data model
 
 ```python

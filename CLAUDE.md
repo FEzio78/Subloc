@@ -14,7 +14,7 @@ Public repo: https://github.com/FEzio78/Subloc (GPL-3.0-or-later). Design + hist
 .venv\Scripts\python -m subloc mcp                                # MCP server for agents: docs/agents.md
 .venv\Scripts\python -m pytest ; .venv\Scripts\python -m ruff check . ; .venv\Scripts\python -m ruff format . ; .venv\Scripts\python -m mypy subloc
 .venv\Scripts\python tools\make_screenshots.py   # README images from a synthetic demo
-.venv\Scripts\python toolsuild.py             # dist\Subloc (Subloc.exe + subloc-cli.exe) + installer (Inno Setup 6)
+.venv\Scripts\python tools\build.py             # dist\Subloc (Subloc.exe + subloc-cli.exe) + installer (Inno Setup 6)
 ```
 
 All four checks must pass before committing.
@@ -87,7 +87,11 @@ PATH from its first runtime hook (`installer/rth_system_path.py`): other program
 
 ## Next
 
-1. Code signing (SmartScreen warns on the unsigned installer); a test on a clean PC (no Python, no Subloc).
-2. Later: one running copy at a time (a second launch hands its files to the first), reading burned-in subtitles
+1. **Speakers and who is spoken to** (next session starts here): design + experiment results in PLAN.md 2.7.
+   Nemotron 3 Diarization via NeMo-Speech.cpp won (sherpa-onnx rejected); per-line male/female is reliable,
+   who speaks is not in crowded scenes; the hard part is the addressee's gender (هل تريد / هل تريدين). First step: save
+   per-line speaker/gender in the project and show it in Lines, then scene roster + a `to` field in translation.
+2. Code signing (SmartScreen warns on the unsigned installer); a test on a clean PC (no Python, no Subloc).
+3. Later: one running copy at a time (a second launch hands its files to the first), reading burned-in subtitles
    (research notes in PLAN.md §2.2), live captions for system audio, CapCut-style animated captions, more UI
    languages.
