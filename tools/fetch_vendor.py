@@ -1,6 +1,6 @@
 """Download the third-party programs Subloc runs (not stored in git), pinned and checksum-verified.
 
-    .venv/Scripts/python tools/fetch_vendor.py            # llama.cpp (CUDA + Vulkan), libmpv, ffmpeg
+    .venv/Scripts/python tools/fetch_vendor.py            # llama.cpp (CUDA + Vulkan), libmpv, ffmpeg, nemo-speech
     .venv/Scripts/python tools/fetch_vendor.py --only mpv
 
 Puts them in vendor/, which the app and the installer use. Needs 7-Zip for the libmpv archive.
@@ -43,6 +43,13 @@ PINNED = {
         "60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba",
         "ffmpeg",
     ),
+    # NeMo-Speech.cpp v0.2.0 (NVIDIA), Apache-2.0, Vulkan build — https://github.com/NVIDIA/NeMo-Speech.cpp
+    # Finds who speaks when (subloc.voices); the model itself is downloaded by Setup.
+    "nemo-speech": (
+        "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v0.2.0/nemo-speech-0.2.0-windows-x86_64-vulkan.zip",
+        "edf15a04ba98740aa0ab75ae4681ac7ad0a488b22b35ce2cbebd10590bb1c1e1",
+        "nemo-speech",
+    ),
 }
 
 
@@ -77,6 +84,18 @@ def fetch(name: str) -> None:
                     base = info.filename.rsplit("/", 1)[-1]
                     if info.filename.endswith(("/bin/ffmpeg.exe", "/bin/ffprobe.exe")) or base == "LICENSE":
                         (dest / base).write_bytes(z.read(info))
+        elif name == "nemo-speech":  # the program and its DLLs flat, NVIDIA's licence + notices in licenses/
+            with zipfile.ZipFile(archive) as z:
+                for info in z.infolist():
+                    parts = info.filename.split("/")
+                    if info.is_dir() or len(parts) < 3:
+                        continue
+                    if parts[1] == "bin":
+                        (dest / parts[-1]).write_bytes(z.read(info))
+                    elif parts[1:4] == ["share", "licenses", "nemo-speech"]:
+                        out = dest / "licenses" / Path(*parts[4:])
+                        out.parent.mkdir(parents=True, exist_ok=True)
+                        out.write_bytes(z.read(info))
         elif archive.suffix == ".zip":
             with zipfile.ZipFile(archive) as z:
                 z.extractall(dest)
@@ -89,7 +108,7 @@ def fetch(name: str) -> None:
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    p.add_argument("--only", choices=["llama", "mpv", "ffmpeg"], help="fetch just one of them")
+    p.add_argument("--only", choices=["llama", "mpv", "ffmpeg", "nemo-speech"], help="fetch just one of them")
     a = p.parse_args()
     for name in PINNED:
         if a.only is None or name.startswith(a.only):

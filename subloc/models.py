@@ -21,7 +21,8 @@ class Cue:
     text: str  # source language
     source: str = "asr"  # asr | ocr | subs | merged
     kind: str = "dialogue"  # dialogue | caption | sfx | narration | song
-    speaker: str | None = None
+    speaker: str | None = None  # "S1", "S2"… (subloc.voices), None = not known
+    gender: str | None = None  # the voice: "male" | "female" | None (not known; subloc.voices)
     translation: str | None = None
     words: list[Word] = field(default_factory=list)
     confidence: float = 1.0

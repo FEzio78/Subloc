@@ -29,7 +29,7 @@ All four checks must pass before committing.
 ## Layout
 
 - Engine: `media` (ffprobe, sync-safe audio decode, fingerprint) · `asr` (Whisper, language vote, mixed mode) ·
-  `segment` · `subparse` · `glossary` (name list per folder) · `translate` (batches, enforced JSON with exact
+  `segment` · `subparse` · `glossary` (name list per folder) · `voices` (speaker + man/woman voice per line) · `translate` (batches, enforced JSON with exact
   count + id enum, `src` anchoring, retries, parallel) · `llm` (OpenAI-compatible client) · `engine`
   (built-in llama-server) · `pipeline` (one video, caching) · `batch` · `style`/`burn`/`subtitles` (outputs) ·
   `catalog`/`hardware`/`download`/`config` (setup) · `recent` (Home list) · `library` (folder index, scans) ·
@@ -94,10 +94,11 @@ PATH from its first runtime hook (`installer/rth_system_path.py`): other program
 
 ## Next
 
-1. **Speakers and who is spoken to** (next session starts here): design + experiment results in PLAN.md 2.7.
-   Nemotron 3 Diarization via NeMo-Speech.cpp won (sherpa-onnx rejected); per-line male/female is reliable,
-   who speaks is not in crowded scenes; the hard part is the addressee's gender (هل تريد / هل تريدين). First step: save
-   per-line speaker/gender in the project and show it in Lines, then scene roster + a `to` field in translation.
+1. **Speakers and who is spoken to** (on `dev`): design + results in PLAN.md 2.7. Step (a) is built
+   (`voices.py`: Nemotron via bundled nemo-speech Vulkan + one ONNX gender classifier; per-line speaker/gender
+   saved and shown in Lines; not sent to the translator). Next: the user tests it in the app; then step (b),
+   scene roster + a `to` field in translation, measured on videos with official Arabic subtitles; the hard
+   part is the addressee's gender (هل تريد / هل تريدين).
 2. Code signing (SmartScreen warns on the unsigned installer); a test on a clean PC (no Python, no Subloc).
 3. Later: one running copy at a time (a second launch hands its files to the first), reading burned-in subtitles
    (research notes in PLAN.md §2.2), live captions for system audio, CapCut-style animated captions, more UI

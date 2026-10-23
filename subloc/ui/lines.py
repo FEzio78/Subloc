@@ -30,6 +30,8 @@ class Row:
     text: str
     translation: str | None
     kind: str = "dialogue"
+    speaker: str | None = None  # "S1"… (subloc.voices)
+    gender: str | None = None  # "male" | "female" | None
 
 
 class LinesModel(QAbstractListModel):
@@ -94,6 +96,15 @@ def with_direction(text: str) -> str:
 
 
 PAD_X, PAD_Y, TIME_W, GAP = 18, 10, 58, 10
+VOICE = {"male": "man", "female": "woman"}  # shown under the speaker; tr() at drawing time
+
+
+def voice_lines(row: Row) -> list[str]:
+    """What the column under the time says about the voice: the speaker, then man / woman (each if known)."""
+    out = [row.speaker] if row.speaker else []
+    if row.gender in VOICE:
+        out.append(tr(VOICE[row.gender]))
+    return out
 
 
 class LineDelegate(QStyledItemDelegate):
@@ -131,7 +142,7 @@ class LineDelegate(QStyledItemDelegate):
             h += QFontMetrics(f_tr).boundingRect(QRect(0, 0, w, 10000), Qt.TextFlag.TextWordWrap, tr_text).height()
         if editing:
             h += LineEditor.EXTRA
-        return max(h, 40)
+        return max(h, 40, PAD_Y * 2 + 20 + 13 * len(voice_lines(row)))
 
     def sizeHint(self, option: QStyleOptionViewItem, index) -> QSize:
         row = index.data(Qt.ItemDataRole.UserRole)
@@ -164,6 +175,12 @@ class LineDelegate(QStyledItemDelegate):
         p.drawText(QRect(time_x, r.top() + PAD_Y + 2, TIME_W, 18),
                    Qt.AlignmentFlag.AlignRight if mirrored else Qt.AlignmentFlag.AlignLeft,
                    fmt_time(row.start))  # fmt: skip
+        vy = r.top() + PAD_Y + 20
+        for i, text in enumerate(voice_lines(row)):
+            p.setPen(QColor(t.MUTED if i == 0 and row.speaker else t.FAINT))
+            p.drawText(QRect(time_x, vy, TIME_W, 14),
+                       Qt.AlignmentFlag.AlignRight if mirrored else Qt.AlignmentFlag.AlignLeft, text)  # fmt: skip
+            vy += 13
 
         w = self._text_width(r.width())
         x = r.left() + PAD_X if mirrored else r.left() + PAD_X + TIME_W + GAP

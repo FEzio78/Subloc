@@ -94,8 +94,8 @@ def _user(batch: list[Cue], before: list[Cue], after: list[Cue], continues: dict
     lines = []
     for c in batch:
         item = {"id": c.id, "max_chars": max_chars(c, tgt_code), "text": c.text}
-        if c.speaker:
-            item["speaker"] = c.speaker
+        # Speakers and voices (subloc.voices) aren't sent yet: that comes with scenes and the addressee, measured
+        # against real subtitles first (PLAN.md 2.7, step b).
         if c.lang and src == LANGS["mixed"]:
             item["lang"] = lang_name(c.lang)
         if c.kind in ("song", "caption"):

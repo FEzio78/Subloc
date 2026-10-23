@@ -1,6 +1,6 @@
 # PyInstaller recipe for the installed app (run by tools/build.py, not by hand).
 # One folder, two programs sharing it: Subloc.exe (the app, no console) and subloc-cli.exe (command line, MCP).
-# Bundled: Subloc's assets, llama.cpp (CUDA + Vulkan), libmpv, ffmpeg (all from vendor/, see tools/fetch_vendor.py).
+# Bundled: Subloc's assets, llama.cpp (Vulkan), libmpv, ffmpeg, nemo-speech (all from vendor/, see tools/fetch_vendor.py).
 # Not bundled: NVIDIA's CUDA libraries (~2 GB) — Setup downloads them on PCs with an NVIDIA card (subloc/cuda.py).
 # ruff: noqa
 
@@ -41,10 +41,12 @@ def version_info(description: str, filename: str) -> VSVersionInfo:
 
 datas = [(str(ROOT / "subloc" / "assets"), "subloc/assets")]
 datas += collect_data_files("faster_whisper")  # its voice-detection model (silero_vad_*.onnx)
-for part in ("mpv", "ffmpeg", "llama/vulkan"):
+for part in ("mpv", "ffmpeg", "llama/vulkan", "nemo-speech"):
     if not (ROOT / "vendor" / part).exists():
         raise SystemExit(f"vendor/{part} is missing: run tools/fetch_vendor.py first")
 datas += [(str(ROOT / "vendor" / "mpv"), "vendor/mpv"), (str(ROOT / "vendor" / "ffmpeg"), "vendor/ffmpeg")]
+# NeMo-Speech.cpp (Vulkan build, ~60 MB): who speaks when (subloc/voices.py); its model comes as a download.
+datas += [(str(ROOT / "vendor" / "nemo-speech"), "vendor/nemo-speech")]
 # llama.cpp: the Vulkan build only (AMD, Intel, processor), and only llama-server + its libraries. The NVIDIA build
 # is downloaded by Setup on NVIDIA PCs that use the built-in translator (subloc/cuda.py).
 sys.path.insert(0, str(ROOT))

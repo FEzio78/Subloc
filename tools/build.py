@@ -38,7 +38,7 @@ def main() -> None:
     p.add_argument("--no-installer", action="store_true", help="stop after the app folder")
     a = p.parse_args()
     version = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
-    for part in ("llama", "mpv", "ffmpeg"):
+    for part in ("llama", "mpv", "ffmpeg", "nemo-speech"):
         if not (ROOT / "vendor" / part).exists():
             sys.exit(f"vendor/{part} is missing: run .venv/Scripts/python tools/fetch_vendor.py first.")
 

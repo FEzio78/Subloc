@@ -1,0 +1,160 @@
+import json
+import threading
+from pathlib import Path
+
+import numpy as np
+import pytest
+
+from subloc import pipeline, voices
+from subloc.models import Cue, Project
+from subloc.voices import Turn, decide, label, speaker_of
+
+SR = 16000
+
+
+def cue(i, start, end):
+    return Cue(id=i, start=start, end=end, text=f"line {i}")
+
+
+class FakeGender:
+    """P(female) read from the audio itself: each test writes the probability it wants into the samples."""
+
+    def p_female(self, x):
+        return float(np.median(x))
+
+
+def audio_with(spans, seconds=20.0):
+    """Audio whose value in each (start, end, p) span is p: FakeGender then answers p for lines there."""
+    a = np.full(int(seconds * SR), 0.5, np.float32)
+    for start, end, p in spans:
+        a[int(start * SR) : int(end * SR)] = p
+    return a
+
+
+def test_speaker_is_the_one_heard_longest_during_the_line():
+    turns = [Turn(0.0, 1.2, 3), Turn(1.0, 4.0, 5)]
+    assert speaker_of(cue(1, 0.0, 3.0), turns) == 5
+    assert speaker_of(cue(2, 0.0, 1.0), turns) == 3
+    assert speaker_of(cue(3, 10.0, 12.0), turns) is None  # nobody talks there
+    assert speaker_of(cue(4, 3.9, 8.0), turns) is None  # 0.1 s of 4.1 s: too little to say
+
+
+def test_a_sure_line_decides_else_the_speaker_else_unknown():
+    assert decide(0.95, 0.1) == "female"  # sure line beats a male speaker (two people under one label)
+    assert decide(0.03, 0.9) == "male"
+    assert decide(0.6, 0.9) == "female"  # unsure line: the speaker's overall voice
+    assert decide(0.6, 0.5) is None  # neither is clear
+    assert decide(0.8, None) == "female"  # no speaker: a line that leans clearly is enough
+    assert decide(None, 0.2) == "male"  # too short to classify: the speaker's voice
+    assert decide(None, None) is None
+
+
+def test_label_names_speakers_in_order_and_sets_each_lines_voice():
+    cues = [cue(1, 0, 2), cue(2, 2.5, 4.5), cue(3, 5, 7), cue(4, 7.5, 9.5), cue(5, 10, 10.3), cue(6, 15, 17)]
+    turns = [Turn(0, 2, 7), Turn(2.5, 4.5, 2), Turn(5, 7, 7), Turn(7.5, 9.5, 2), Turn(10, 10.3, 2)]
+    # speaker 7 (first heard → S1) is a man; speaker 2 (S2) a woman, but line 4 is someone else's sure male voice.
+    audio = audio_with([(0, 2, 0.1), (2.5, 4.5, 0.8), (5, 7, 0.2), (7.5, 9.5, 0.02), (15, 17, 0.5)])
+    speakers = label(cues, audio, turns, FakeGender())
+    assert [c.speaker for c in cues] == ["S1", "S2", "S1", "S2", "S2", None]
+    assert [c.gender for c in cues] == ["male", "female", "male", "male", None, None]
+    assert speakers["S1"]["gender"] == "male" and speakers["S1"]["lines"] == 2
+    # S2's overall voice mixes 0.8 and 0.02 over equal time: not clear, so line 5 (too short) stays unknown.
+    assert speakers["S2"]["gender"] is None
+
+
+def test_label_stops_when_asked():
+    with pytest.raises(voices.Cancelled):
+        label([cue(1, 0, 2)], audio_with([]), [], FakeGender(), should_stop=lambda: True)
+
+
+def test_voice_facts_are_saved_with_the_project(tmp_path):
+    c = cue(1, 0, 2)
+    c.speaker, c.gender = "S2", "female"
+    path = tmp_path / "v.subloc.json"
+    Project(video="v.mp4", cues=[c]).save(path)
+    back = Project.load(path).cues[0]
+    assert (back.speaker, back.gender) == ("S2", "female")
+    old = json.loads(path.read_text(encoding="utf-8"))
+    for key in ("speaker", "gender"):
+        del old["cues"][0][key]
+    path.write_text(json.dumps(old), encoding="utf-8")
+    assert Project.load(path).cues[0].gender is None  # projects saved before this still load
+
+
+class FakeProcess:
+    def __init__(self, cmd, out_json, returncode=0):
+        self.returncode, self.cmd = returncode, cmd
+        if returncode == 0:
+            Path(cmd[cmd.index("-o") + 1]).write_text(json.dumps(out_json), encoding="utf-8")
+
+    def poll(self):
+        return self.returncode
+
+    def kill(self):
+        pass
+
+    def wait(self):
+        return self.returncode
+
+
+def test_diarize_tries_the_graphics_card_then_the_processor(monkeypatch, tmp_path):
+    monkeypatch.setattr(voices, "exe", lambda: tmp_path / "nemo-speech.exe")
+    seen = []
+
+    def popen(cmd, **kw):
+        device = cmd[cmd.index("--device") + 1]
+        seen.append(device)
+        assert Path(cmd[2]).read_bytes()[:4] == b"RIFF"  # the audio went in as a WAV file
+        return FakeProcess(cmd, {"segments": [{"start": 0.5, "end": 2.0, "speaker": 1}]},
+                           returncode=1 if device == "vulkan" else 0)  # fmt: skip
+
+    monkeypatch.setattr(voices.proc, "popen", popen)
+    turns = voices.diarize(np.zeros(SR, np.float32))
+    assert seen == ["vulkan", "cpu"]
+    assert turns == [Turn(0.5, 2.0, 1)]
+
+
+def test_voices_step_is_skipped_without_its_models(monkeypatch, tmp_path):
+    monkeypatch.setattr(voices, "ready", lambda: False)
+    proj = Project(video="v.mp4", cues=[cue(1, 0, 2)])
+    pipeline._voices(tmp_path / "v.mp4", pipeline.Options(), proj, lambda: None, pipeline.Reporter(),
+                     threading.Event(), audio=np.zeros(SR, np.float32))  # fmt: skip
+    assert "voices" not in proj.meta and proj.cues[0].speaker is None
+
+
+def test_voices_step_runs_once_per_set_of_lines_and_never_fails_the_job(monkeypatch, tmp_path):
+    monkeypatch.setattr(voices, "ready", lambda: True)
+    monkeypatch.setattr(voices, "GenderModel", FakeGender)
+    calls = []
+
+    def diarize(audio, should_stop, log):
+        calls.append(1)
+        return [Turn(0, 2, 4)]
+
+    monkeypatch.setattr(voices, "diarize", diarize)
+    proj = Project(video="v.mp4", cues=[cue(1, 0, 2)], meta={"source": {"model": "x"}, "segment_v": 2})
+    warnings = []
+    rep = pipeline.Reporter()
+    rep.warn = warnings.append  # type: ignore[method-assign]
+    run = lambda: pipeline._voices(tmp_path / "v.mp4", pipeline.Options(), proj, lambda: None, rep,  # noqa: E731
+                                   threading.Event(), audio=audio_with([(0, 2, 0.05)]))  # fmt: skip
+    run()
+    run()
+    assert len(calls) == 1 and proj.cues[0].speaker == "S1" and proj.cues[0].gender == "male"
+    proj.meta["segment_v"] = 3  # lines re-split: label them again
+
+    def broken(audio, should_stop, log):
+        raise RuntimeError("no Vulkan")
+
+    monkeypatch.setattr(voices, "diarize", broken)
+    run()
+    assert warnings and "not affected" in warnings[0]
+
+
+def test_speaker_voices_are_not_sent_to_the_translator_yet():
+    from subloc.translate import _user
+
+    c = cue(1, 0, 2)
+    c.speaker, c.gender = "S1", "female"
+    text = _user([c], [], [], {}, "English", "Arabic", "ar")
+    assert "S1" not in text and "female" not in text

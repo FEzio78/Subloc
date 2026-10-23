@@ -199,8 +199,10 @@ def read_lines(video: Path, offset: int = 0, limit: int = 200) -> dict:
     lines = proj.cues[offset : offset + limit]
     return {"video": str(video.resolve()), "language": proj.language, "target": proj.target_language,
             "total": len(proj.cues), "offset": offset,
+            "speakers": proj.meta.get("voices", {}).get("speakers", {}),
             "lines": [{"id": c.id, "start": round(c.start, 2), "end": round(c.end, 2), "text": c.text,
-                       "translation": c.translation} for c in lines]}  # fmt: skip
+                       "translation": c.translation, "speaker": c.speaker, "gender": c.gender}
+                      for c in lines]}  # fmt: skip
 
 
 def edit_line(video: Path, line_id: int, text: str, st: Settings) -> dict:

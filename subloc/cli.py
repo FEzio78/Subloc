@@ -273,7 +273,8 @@ def cmd_lines(a: argparse.Namespace) -> int:
         _emit(r)
         return 0
     for line in r["lines"]:
-        print(f"{line['id']:>5}  {_clock(line['start'])}  {line['text']}")
+        voice = " ".join(v for v in (line["speaker"], {"male": "m", "female": "f"}.get(line["gender"] or "")) if v)
+        print(f"{line['id']:>5}  {_clock(line['start'])}  " + (f"[{voice}] " if voice else "") + line["text"])
         if line["translation"]:
             print(f"{'':>5}  {'':>9}  {line['translation']}")
     return 0

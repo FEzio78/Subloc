@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .. import FROZEN, cuda, hardware
+from .. import FROZEN, cuda, hardware, voices
 from ..catalog import PRESETS, SPEECH, TRANSLATORS, Preset, recommend
 from ..config import Config, models_dir
 from ..download import Cancelled, download
@@ -463,6 +463,9 @@ class SetupWizard(QDialog):
             present = cuda.installed() or bool(cuda.system_dirs())
             items.append(("cuda", tr("NVIDIA graphics card support (CUDA)"), cuda.DOWNLOAD_GB, present))
         items.append(("speech", tr("Speech recognition · Whisper {m}", m=sp.id), sp.size_gb, _whisper_present(sp.id)))
+        if voices.exe() is not None:  # small (~0.12 GB): who speaks each line, man or woman (subloc.voices)
+            items.append(("voices", tr("Speakers and voices · who speaks, man or woman"), voices.DOWNLOAD_GB,
+                          voices.installed()))  # fmt: skip
         if self.provider == "builtin" and self.hw and self.hw.nvidia and FROZEN:
             # The installer carries only the Vulkan/processor build of llama.cpp; NVIDIA's comes as a download.
             items.append(("llama_cuda", tr("Built-in translator · engine for NVIDIA cards"), cuda.LLAMA_CUDA_SIZE / 1e9,
@@ -550,6 +553,13 @@ class SetupWizard(QDialog):
                         cuda.install(
                             lambda done, total: bus.progress.emit(
                                 "cuda", done / max(total, 1), f"{done / 1e9:.1f} / {total / 1e9:.1f} GB"
+                            ),
+                            cancel,
+                        )
+                    elif key == "voices":
+                        voices.install(
+                            lambda done, total: bus.progress.emit(
+                                "voices", done / max(total, 1), f"{done / 1e9:.2f} / {total / 1e9:.2f} GB"
                             ),
                             cancel,
                         )

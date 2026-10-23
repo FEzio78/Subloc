@@ -316,6 +316,18 @@ AR: dict[str, str] = {
     "Keep names consistent": "توحيد الأسماء",
     "Finds names first so each is spelled the same way in every line and episode.":
         "يجد الأسماء أولًا لتُكتب بالطريقة نفسها في كل سطر وحلقة.",
+    "Speakers and voices": "المتحدثون وأصواتهم",
+    "Marks who speaks each line and whether the voice is a man's or a woman's (shown in the lines). Runs on this PC after listening.":
+        "يحدّد من يتكلم في كل سطر وهل الصوت لرجل أم لامرأة (يظهر في الأسطر). يعمل على هذا الجهاز بعد الاستماع.",
+    "Download ({n} GB)": "تنزيل ({n} غيغابايت)",
+    "Downloading…": "جارٍ التنزيل…",
+    "Speakers and voices are ready. New videos get them after listening.":
+        "المتحدثون وأصواتهم جاهزون. تحصل عليهم المقاطع الجديدة بعد الاستماع.",
+    "Voices {n}": "الأصوات {n}",
+    "Speakers…": "المتحدثون…",
+    "man": "رجل",
+    "woman": "امرأة",
+    "Speakers and voices · who speaks, man or woman": "المتحدثون وأصواتهم · من يتكلم، رجل أم امرأة",
     "On (recommended)": "مفعّل (مُوصى به)",
     "Off": "معطّل",
     "Subtitle look": "شكل الترجمة",

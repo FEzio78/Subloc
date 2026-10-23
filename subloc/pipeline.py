@@ -44,6 +44,7 @@ class Options:
     style: SubStyle | None = None  # set = also write a styled Video.<lang>.ass
     engine: Any = None  # BuiltinEngine when Subloc runs its own translator (else llm_url is used)
     prefer_builtin_subs: bool = False  # batch: per file, translate its own subtitles when it has them
+    voices: bool = True  # who speaks each line + man/woman voice, when those models are installed (subloc.voices)
 
 
 class Reporter:
@@ -57,7 +58,7 @@ class Reporter:
         self.log(f"WARNING: {msg}")
 
     def stage(self, name: str, frac: float, detail: str = "") -> None:
-        """name: audio | transcribe | translate | done"""
+        """name: audio | transcribe | voices | names | translate | done"""
 
     def cues(self, cues: list[Cue]) -> None:
         """Called whenever subtitle lines change (after transcription, after each translation batch)."""
@@ -118,6 +119,8 @@ def run(
             f"({track.title or track.lang or 'untitled'}), {len(proj.cues)} lines, "
             f"language={proj.language or 'unknown'}"
         )
+        if info.has_audio:
+            _voices(video, opt, proj, save, rep, cancel, track=default_audio_track(info))
         return _translate_and_write(video, opt, proj, save, rep, cancel, outputs)
 
     # 1b. Transcribe (cached unless track/model/language changed or forced)
@@ -177,6 +180,7 @@ def run(
         proj.target_language = None
         rep.log(f"  {len(proj.cues)} subtitles, language={proj.language}, {time.time() - t0:.0f}s")
         save()
+        _voices(video, opt, proj, save, rep, cancel, audio=audio)
     else:
         if proj.meta.get("segment_v") != SEGMENT_VERSION:
             # Line-splitting rules changed since this was saved: re-split the kept raw transcript
@@ -187,6 +191,7 @@ def run(
             save()
             rep.log("Re-split saved transcript with updated line rules")
         rep.log(f"Using saved transcript ({len(proj.cues)} subtitles, language={proj.language})")
+        _voices(video, opt, proj, save, rep, cancel, track=audio_track)
 
     src_srt = video.with_name(f"{video.stem}.{proj.language}.srt")
     _write(proj.cues, src_srt, translated=False, lang=proj.language)
@@ -195,6 +200,46 @@ def run(
     if opt.transcribe_only:
         return proj, outputs
     return _translate_and_write(video, opt, proj, save, rep, cancel, outputs)
+
+
+def _voices(video: Path, opt: Options, proj: Project, save, rep: Reporter, cancel: threading.Event,
+            audio=None, track: int = 0) -> None:  # fmt: skip
+    """Step 1c: who speaks each line and whether the voice is a man's or a woman's (subloc.voices). Saved with
+    the project and redone only when the lines change. Skipped when its models aren't installed; a failure here
+    is a warning, never the end of the job (the subtitles don't need it)."""
+    from . import voices
+
+    if not opt.voices or not voices.ready():
+        return
+    key = {"v": voices.VERSION, "source": proj.meta.get("source"), "segment_v": proj.meta.get("segment_v")}
+    if proj.meta.get("voices", {}).get("key") == key:
+        return
+    rep.stage("voices", 0, "Finding speakers…")
+    rep.log("Finding speakers and their voices…")
+    t0 = time.time()
+    try:
+        if audio is None:
+            audio = load_audio(video, track).samples
+        turns = voices.diarize(audio, cancel.is_set, rep.log)
+        if cancel.is_set():
+            raise Cancelled()
+        speakers = voices.label(proj.cues, audio, turns, voices.GenderModel(), cancel.is_set,
+                                lambda f: rep.stage("voices", f, "Voices…"))  # fmt: skip
+    except voices.Cancelled as e:
+        raise Cancelled() from e
+    except Cancelled:
+        raise
+    except Exception as e:  # optional step: report and carry on
+        rep.warn(f"Couldn't tell the speakers apart ({e}). The subtitles are not affected.")
+        return
+    proj.meta["voices"] = {"key": key, "speakers": speakers}
+    save()
+    rep.cues(proj.cues)
+    known = sum(1 for c in proj.cues if c.gender)
+    rep.log(f"  {len(speakers)} speakers ("
+            + ", ".join(f"{n} {s['gender'] or '?'}" for n, s in speakers.items())
+            + f"), voice known on {known}/{len(proj.cues)} lines, {time.time() - t0:.0f}s")  # fmt: skip
+    rep.stage("voices", 1, f"{len(speakers)} speakers")
 
 
 def _translate_and_write(video, opt, proj, save, rep, cancel, outputs):

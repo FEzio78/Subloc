@@ -57,7 +57,7 @@ Any other MCP client: run `python -m subloc mcp` (stdio transport).
 | `make_subtitles` | start subtitles for videos/folders → `job_id` | writes subtitle files |
 | `job_status` | progress, per-video status, files written | no |
 | `cancel_job` | stop a job (progress is kept) | — |
-| `read_subtitles` | lines: id, start/end, original, translation (paged) | no |
+| `read_subtitles` | lines: id, start/end, original, translation, speaker ("S1"…) and voice (male/female, when known) (paged) | no |
 | `edit_line` | replace one translated line | rewrites the subtitle files |
 | `retranslate_lines` | translate some lines again → `job_id` | rewrites the subtitle files |
 | `burn_subtitles` | a copy of the video with subtitles drawn in → `job_id` | writes a new video |

@@ -836,6 +836,7 @@ class SettingsPage(QWidget):
     shortcuts = Signal()
     check_updates = Signal()
     open_link = Signal(str)
+    get_voices = Signal()
 
     def __init__(self):
         super().__init__()
@@ -896,6 +897,22 @@ class SettingsPage(QWidget):
         self.glossary.currentIndexChanged.connect(lambda *_: self.changed.emit())
         row("Keep names consistent", "Finds names first so each is spelled the same way in every line and "
             "episode.", self.glossary)  # fmt: skip
+        self.voices = QComboBox()
+        self.voices.setObjectName("boxed")
+        self.voices.addItem("On", True)
+        self.voices.addItem("Off", False)
+        self.voices.currentIndexChanged.connect(lambda *_: self.changed.emit())
+        self.voices_get = QPushButton("")
+        self.voices_get.setIcon(icons.icon("download", t.TEXT))
+        self.voices_get.clicked.connect(self.get_voices.emit)
+        vb = QHBoxLayout()
+        vb.setContentsMargins(0, 0, 0, 0)
+        vb.addWidget(self.voices)
+        vb.addWidget(self.voices_get)
+        vbw = QWidget()
+        vbw.setLayout(vb)
+        row("Speakers and voices", "Marks who speaks each line and whether the voice is a man's or a woman's "
+            "(shown in the lines). Runs on this PC after listening.", vbw)  # fmt: skip
         style = QPushButton("Change…")
         style.setIcon(icons.icon("palette", t.TEXT))
         style.clicked.connect(self.edit_style.emit)
@@ -919,6 +936,13 @@ class SettingsPage(QWidget):
 
         outer.addWidget(self._about())
         outer.addStretch()
+
+    def show_voices(self, state: str, detail: str = "") -> None:
+        """state: ready (the On/Off choice) | missing (a Download button) | downloading (progress in the button)."""
+        self.voices.setVisible(state == "ready")
+        self.voices_get.setVisible(state != "ready")
+        self.voices_get.setEnabled(state == "missing")
+        self.voices_get.setText(detail)
 
     def _about(self) -> QFrame:
         card = QFrame()

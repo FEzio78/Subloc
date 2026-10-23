@@ -31,7 +31,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .. import batch, library, power, proc, recent
+from .. import batch, library, power, proc, recent, voices
 from ..batch import Item, find_videos, load_queue, save_queue
 from ..burn import burn
 from ..busy import BusyLock
@@ -105,10 +105,11 @@ class Bus(QObject):
     lib_progress = Signal(str)
     lib_scanned = Signal(object)  # library.Scan, or None when stopped
     update = Signal(str, str)  # latest version tag ("" = none published, "error") and its page
+    voices = Signal(float, str)  # speaker models download: fraction, error ("" = fine; fraction 1 = done)
 
 
 def _rows(cues: list[Cue]) -> list[Row]:
-    return [Row(c.id, c.start, c.end, c.text, c.translation, c.kind) for c in cues]
+    return [Row(c.id, c.start, c.end, c.text, c.translation, c.kind, c.speaker, c.gender) for c in cues]
 
 
 class MainWindow(HomeMixin, LibraryMixin, QueueMixin, QMainWindow):
@@ -256,6 +257,8 @@ class MainWindow(HomeMixin, LibraryMixin, QueueMixin, QMainWindow):
         s.language.connect(self.change_language)
         s.shortcuts.connect(self.show_shortcuts)
         s.check_updates.connect(self.check_updates)
+        s.get_voices.connect(self.get_voices)
+        self.bus.voices.connect(self._on_voices)
         s.open_link.connect(lambda url: QDesktopServices.openUrl(QUrl(url)))
 
     def toast(self, text: str, kind: str = "info", action: tuple[str, Any] | None = None, secs: float = 4.0) -> None:
@@ -301,6 +304,8 @@ class MainWindow(HomeMixin, LibraryMixin, QueueMixin, QMainWindow):
         select_data(self.settingsp.parallel, s.value("parallel", 2))
         select_data(self.settingsp.glossary, str(s.value("glossary", "true")).lower() != "false")
         select_data(self.settingsp.intro, "off" if str(s.value("intro", "true")).lower() == "false" else "on")
+        select_data(self.settingsp.voices, str(s.value("voices", "true")).lower() != "false")
+        self._show_voices()
         self._show_style_name()
 
     def _save(self, *_) -> None:
@@ -312,6 +317,7 @@ class MainWindow(HomeMixin, LibraryMixin, QueueMixin, QMainWindow):
         s.setValue("parallel", self.settingsp.parallel.currentData())
         s.setValue("glossary", "true" if self.settingsp.glossary.currentData() else "false")
         s.setValue("intro", "false" if self.settingsp.intro.currentData() == "off" else "true")
+        s.setValue("voices", "true" if self.settingsp.voices.currentData() else "false")
 
     def _load_style(self) -> SubStyle:
         raw = self.settings.value("style")
@@ -336,6 +342,7 @@ class MainWindow(HomeMixin, LibraryMixin, QueueMixin, QMainWindow):
             parallel=self.settingsp.parallel.currentData() or 2,
             auto_glossary=bool(self.settingsp.glossary.currentData()),
             style=style,
+            voices=bool(self.settingsp.voices.currentData()),
         )
 
     # ---------------------------------------------------------------- translator status
@@ -552,6 +559,9 @@ class MainWindow(HomeMixin, LibraryMixin, QueueMixin, QMainWindow):
         elif name == "transcribe":
             st.set("audio", "done", tr("Read"))
             st.set("transcribe", "now", f"{frac:.0%}" if frac else tr("Starting…"))
+        elif name == "voices":  # after listening: shown in the Listening box
+            st.set("audio", "done", tr("Read"))
+            st.set("transcribe", "now", tr("Voices {n}", n=f"{frac:.0%}") if frac else tr("Speakers…"))
         elif name == "names":
             st.set("audio", "done", tr("Read"))
             if self.jobp.stages.boxes["transcribe"].state != "done":
@@ -861,6 +871,37 @@ class MainWindow(HomeMixin, LibraryMixin, QueueMixin, QMainWindow):
 
     def show_shortcuts(self) -> None:
         ShortcutsDialog(self).exec()
+
+    # ---------------------------------------------------------------- speakers and voices (optional models)
+
+    def _show_voices(self) -> None:
+        if voices.installed():
+            self.settingsp.show_voices("ready")
+        else:
+            self.settingsp.show_voices("missing", tr("Download ({n} GB)", n=f"{voices.DOWNLOAD_GB:.2f}"))
+
+    def get_voices(self) -> None:
+        bus = self.bus
+        self.settingsp.show_voices("downloading", tr("Downloading…"))
+
+        def work() -> None:
+            try:
+                voices.install(lambda done, total: bus.voices.emit(min(done / max(total, 1), 0.999), ""))
+                bus.voices.emit(1.0, "")
+            except Exception as e:
+                bus.voices.emit(0.0, str(e) or type(e).__name__)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _on_voices(self, frac: float, err: str) -> None:
+        if err:
+            self._show_voices()
+            self.toast(err, "warning", secs=8)
+        elif frac >= 1:
+            self._show_voices()
+            self.toast(tr("Speakers and voices are ready. New videos get them after listening."), "ok")
+        else:
+            self.settingsp.show_voices("downloading", f"{frac:.0%}")
 
     # ---------------------------------------------------------------- updates (only when asked)
 

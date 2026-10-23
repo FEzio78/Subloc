@@ -113,7 +113,7 @@ Video ─ffmpeg─► │ 16 kHz mono → VAD (skip music/silence)     │
 
 ---
 
-### 2.7 Speakers and who is spoken to (research done 2026-10-22, not built)
+### 2.7 Speakers and who is spoken to (research 2026-10-22; step (a) built 2026-10-24 on `dev`)
 
 **Problem.** English "do you want this?" is هل تريد هذا؟ to a man and هل تريدين هذا؟ to a woman, أتريدان/أتريدون/
 أتريدن for two or a group. The speaker's own gender matters less (أنا متعب/متعبة) than the **addressee's**, which
@@ -162,6 +162,24 @@ in the project, shown in Lines, no translation change; (b) scene roster + `to` f
 real videos that have official Arabic subtitles (score only the second-person lines, locally); (c) name ↔ voice
 in the glossary; (d) one-click fix; (e) deep-context mode.
 
+**Step (a) built (2026-10-24, `subloc/voices.py`), with what the build changed:**
+- **Vulkan build only** (19 MB zip, bundled in vendor/nemo-speech): on the 4090 it is nearly as fast as CUDA
+  (6.5 min clip: 4.3 s vs 3.6 s; 9.2 min: 5.9 vs 4.8 s) and agrees with it on 87–95% of the speech; the CPU
+  fallback is ~4x real time. No CUDA build to download.
+- **One gender classifier, no pitch.** Per line on 5 real clips (Turkish, English podcast, Hindi, 2× Korean):
+  pitch is useless on TV audio (a man both classifiers agree on measures 244 Hz); classifier A (Common Voice,
+  95 MB) calls Korean women male on most lines; classifier B (ECAPA, 16 MB, MIT) per line matches every
+  per-speaker label the user confirmed by ear, at ~70 ms a line (A: ~190 ms). So: B only.
+- **Rule:** a line with P ≥ 0.9 (or ≤ 0.1) keeps its own answer (one diarized "speaker" sometimes holds two
+  people: Conan clip, 22 of 45 lines confidently the other gender); else the speaker's duration-weighted P if
+  ≥ 0.75 / ≤ 0.25 over ≥ 4 s; else a line leaning ≥ 0.75; else unknown.
+- Runs after listening (also for built-in subtitles), saved in the project (`Cue.speaker` "S1"…, `Cue.gender`,
+  `meta.voices` = key + speakers), redone only when the lines change; a failure is a warning only. Shown in
+  Lines under the time; Settings → Speakers and voices (On/Off, Download 0.12 GB); Setup item; `subloc lines`
+  and `read_subtitles` report it. Not sent to the translator yet (step b).
+- First real runs: Turkish couple 4.2 min → 3 speakers, voice known on 93/94 lines, 5 s; Conan 6.5 min →
+  6 speakers incl. one woman (37/42 of her lines female), 204/205 known, 7 s.
+
 ## 3. Data model
 
 ```python
@@ -171,7 +189,8 @@ Cue:
   end: float
   source: "asr" | "ocr" | "merged"
   kind: "dialogue" | "caption" | "sfx" | "narration"
-  speaker: str | None
+  speaker: str | None   # "S1"… (voices)
+  gender: str | None    # voice: "male" | "female" | None (voices)
   text: str             # source language
   translation: str | None
   words: list[Word]     # from ASR, optional
@@ -208,6 +227,7 @@ Subloc/
     subparse.py      # ASS/SRT parsing of built-in subtitles
     langs.py         # language names, per-target style rules, Arabic letter cleanup
     glossary.py      # name pass + folder glossary (subloc.glossary.json)
+    voices.py        # who speaks each line (Nemotron via nemo-speech) + man/woman voice (ONNX classifier)
     translate.py     # batched translation: enforced format, src anchoring, retries, parallel
     llm.py           # LM Studio / OpenAI-compatible client with readable errors
     errors.py        # user-facing error types

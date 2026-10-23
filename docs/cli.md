@@ -9,7 +9,7 @@ subloc translate "Episode 3.mkv" --to en          # one video, into English
 subloc transcribe "Lecture.mp4"                   # subtitles in the spoken language only
 subloc folder "D:\Anime" --missing                # what still needs subtitles (quick: files only)
 subloc info "Episode 3.mkv"                       # tracks inside, subtitle files, progress
-subloc lines "Episode 3.mkv"                      # read the lines: id, time, original, translation
+subloc lines "Episode 3.mkv"                      # read the lines: id, time, [speaker m/f], original, translation
 subloc edit "Episode 3.mkv" 42 "النص المصحح"        # correct line 42
 subloc retranslate "Episode 3.mkv" 40 41 42       # translate lines again (after fixing a name, say)
 subloc burn "Episode 3.mkv" --style Boxed         # a copy with the subtitles drawn in
