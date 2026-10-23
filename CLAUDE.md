@@ -19,6 +19,13 @@ Public repo: https://github.com/FEzio78/Subloc (GPL-3.0-or-later). Design + hist
 
 All four checks must pass before committing.
 
+## Branches
+
+- `main` = the working, released app. Don't develop on it.
+- `dev` = testing phase: new work is committed here, tested in the real app, then merged into `main` when the
+  user says so (`git switch main; git merge --ff-only dev`). `dev` stays local unless the user asks to push it.
+- `private-history` is never pushed.
+
 ## Layout
 
 - Engine: `media` (ffprobe, sync-safe audio decode, fingerprint) · `asr` (Whisper, language vote, mixed mode) ·
