@@ -203,6 +203,17 @@ def test_arabic_output_never_contains_persian_letters():
     assert clean_output("ژ", "fa") == "ژ"  # only Arabic targets are changed
 
 
+def test_feminine_you_is_written_with_a_visible_ya():
+    from subloc.langs import clean_output
+
+    k = "\u0650"  # kasra
+    assert clean_output(f"شكراً لك{k}، هل أنت{k} بخير؟", "ar") == "شكراً لكي، هل أنتي بخير؟"
+    assert clean_output(f"يمكنك{k} أن تأتي. أين كنت{k}؟ عليك{k}", "ar") == "يمكنكي أن تأتي. أين كنتي؟ عليكي"
+    assert clean_output(f"في البيت{k} والوقت{k}", "ar") == f"في البيت{k} والوقت{k}"  # case endings stay
+    assert clean_output("شكراً لك. انظري إلي", "ar") == "شكراً لك. انظري إلي"  # unmarked stays unmarked
+    assert clean_output(f"لك{k}", "fa") == f"لك{k}"
+
+
 def test_single_line_requests_are_not_rejected_by_the_alignment_check():
     # Real case: correct translation, but the model copied a context line into "src".
     batch = [cue(75, 0, 2, "Вы что-то увидели? Вас что-то напрягло?")]

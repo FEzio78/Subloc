@@ -222,4 +222,4 @@ def test_the_translators_listener_is_kept_on_each_line():
 
     cs = voiced([(0, "S1", "male", "Are you hungry?"), (3, "S2", "female", "No.")])
     translate(cs, LLM(), "m", "en", "ar", log=lambda m: None, workers=1)
-    assert [(c.to, c.translation) for c in cs] == [("S2", "هل أنتِ جائعة؟"), (None, "لا.")]
+    assert [(c.to, c.translation) for c in cs] == [("S2", "هل أنتي جائعة؟"), (None, "لا.")]  # feminine you: visible ي

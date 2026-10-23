@@ -53,7 +53,9 @@ TARGET_BRIEF = {
         "Arabic subtitles. Translate titles and roles instead of transliterating them "
         "(e.g. PD → المخرج, CEO → المدير التنفيذي); transliterate personal names. "
         "Use only standard Arabic letters — never Persian/Urdu letters such as پ چ ژ گ ڤ: "
-        "write zh/j/ж as ج, p as ب, v as ف, ch as تش, hard g as غ (e.g. Серёжа → سيريوجا, Pavel → بافل)."
+        "write zh/j/ж as ج, p as ب, v as ف, ch as تش, hard g as غ (e.g. Серёжа → سيريوجا, Pavel → بافل). "
+        "When the listener is a woman, always mark the feminine on every word for her: أنتِ، لكِ، عليكِ، يمكنكِ، "
+        "كنتِ، تريدين، انظري."
     ),
 }
 
@@ -87,9 +89,24 @@ def fixed_name(source: str) -> str | None:
     return None
 
 
+# Feminine "you" written with a visible ي (the user's choice: on a moving subtitle a kasra under a letter is easy
+# to miss): لكِ → لكي, أنتِ → أنتي, يمكنكِ → يمكنكي, كنتِ → كنتي. Only where the model wrote that kasra at the end
+# of a word (it marks the feminine there); words with the article (case endings such as البيتِ) stay as they are.
+_FEM_YOU = re.compile(r"(?<![\u0621-\u0652])([\u0621-\u0652]*?[كت])\u0650(?![\u0621-\u0652])")
+_ARTICLE = ("ال", "وال", "بال", "فال", "كال", "لل")
+
+
+def visible_feminine(text: str) -> str:
+    def fix(m: re.Match) -> str:
+        word = m.group(1)
+        return m.group(0) if word.startswith(_ARTICLE) else word + "ي"
+
+    return _FEM_YOU.sub(fix, text)
+
+
 def clean_output(text: str, tgt_code: str) -> str:
     if tgt_code == "ar":
-        return text.replace("چ", "تش").translate(_ARABIC_LETTERS)
+        return visible_feminine(text.replace("چ", "تش").translate(_ARABIC_LETTERS))
     return text
 
 

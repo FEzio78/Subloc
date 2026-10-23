@@ -55,7 +55,8 @@ All four checks must pass before committing.
 - Never name attributes after Qt methods (`style`, `size`, `screen`, `thread`, `done`…) — test enforces.
 - Write direction marks as escapes (`"\u200f"`, `"\u2066"`…), never raw — test enforces. The Edit/Write
   tools turn escapes into raw characters: after writing one, check with grep and fix with a script (`chr(92)`).
-- Arabic output: MSA, standard Arabic letters only, numbers/model codes as spoken digits (Eight-Six → 86).
+- Arabic output: MSA, standard Arabic letters only, numbers/model codes as spoken digits (Eight-Six → 86);
+  feminine "you" with a visible ي, not a kasra (أنتي، لكي، يمكنكي، كنتي: the user's choice, `langs.visible_feminine`).
 - Defaults the user chose: 2 parallel translation requests (1–4 selectable); the user picks models.
 
 ## Status (2026-10-22)
