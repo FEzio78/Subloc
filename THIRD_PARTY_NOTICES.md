@@ -47,6 +47,7 @@ The installer is made with [Inno Setup](https://jrsoftware.org/isinfo.php) and t
 | [Whisper](https://github.com/openai/whisper) (via Systran's faster-whisper conversions) | MIT |
 | [Gemma 4](https://ai.google.dev/gemma) (GGUF builds by lmstudio-community) | [Gemma Terms of Use](https://ai.google.dev/gemma/terms) |
 | [NVIDIA Nemotron 3 Diarization](https://huggingface.co/nvidia/Nemotron-3-Diarization) (GGUF q8_0) | [OpenMDW-1.1](https://huggingface.co/nvidia/Nemotron-3-Diarization) |
+| [3D-Speaker CAM++](https://github.com/modelscope/3D-Speaker) (VoxCeleb, ONNX from [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx/releases/tag/speaker-recongition-models)) | Apache-2.0 |
 | [voice-gender-classifier](https://huggingface.co/JaesungHuh/voice-gender-classifier) (ONNX q8 v2 by [Alice-Sabrina-Ivy](https://huggingface.co/Alice-Sabrina-Ivy/voice-gender-classifier-onnx-q8-v2)) | MIT |
 
 ---

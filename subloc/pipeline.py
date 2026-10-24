@@ -225,7 +225,7 @@ def _voices(video: Path, opt: Options, proj: Project, save, rep: Reporter, cance
         if cancel.is_set():
             raise Cancelled()
         speakers = voices.label(proj.cues, audio, turns, voices.GenderModel(), cancel.is_set,
-                                lambda f: rep.stage("voices", f, "Voices…"))  # fmt: skip
+                                lambda f: rep.stage("voices", f, "Voices…"), prints=voices.Fingerprints())  # fmt: skip
     except voices.Cancelled as e:
         raise Cancelled() from e
     except Cancelled:

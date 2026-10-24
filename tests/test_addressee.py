@@ -66,7 +66,11 @@ class LLM:
         ids = [json.loads(line)["id"] for line in user.splitlines() if line.startswith('{"id"')]
         if "Do not translate anything" in messages[0]["content"]:
             return json.dumps({"lines": [{"id": i, "to": "S2" if i in (1, 3) else "unknown"} for i in ids]})
-        assert '"to": "S2", "to_voice": "woman"' in user and '"to"' not in str(json_schema)
+        assert '"to": "S2", "to_voice": "woman"' in user
+        # the decided listener is written again just before each translation, and can only be that one
+        assert [i["properties"]["to"]["enum"] for i in json_schema["properties"]["lines"]["prefixItems"]] == [
+            ["S2" if i in (1, 3) else "unknown"] for i in ids
+        ]
         return json.dumps({"lines": [{"id": i, "src": "", "text": f"T{i}"} for i in ids]})
 
 

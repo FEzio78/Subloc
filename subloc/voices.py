@@ -31,7 +31,7 @@ from .media import SAMPLE_RATE
 from .models import Cue
 
 # Bump when the method changes in a way that makes saved results wrong: projects then label their lines again.
-VERSION = 2  # 2: long audio in overlapping windows (more than 8 speakers in a film)
+VERSION = 3  # 2: long audio in overlapping windows; 3: one id per person across windows (voice fingerprints)
 
 
 @dataclass(frozen=True)
@@ -57,7 +57,17 @@ GENDER = ModelFile(
     "fdc2dbdcf99b9217977f7472f7d677dd48219c4759ca3f38d0626b600d86c252",
     16057697,
 )
-MODELS = (DIARIZER, GENDER)
+# 3D-Speaker CAM++ (Apache-2.0, VoxCeleb), the ONNX build in sherpa-onnx's releases: a voice fingerprint per line,
+# to give a person one id through a whole film. GitHub publishes no digest for this asset: pinned to the sha256 of
+# the copy checked on 2026-10-24.
+FINGERPRINT = ModelFile(
+    "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/"
+    "3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx",
+    "campplus-sv-en-voxceleb-16k.onnx",
+    "357a834f702b80161e5b981182c038e18553c1f2ca752ed6cec2052365d4129b",
+    29596978,
+)
+MODELS = (DIARIZER, GENDER, FINGERPRINT)
 DOWNLOAD_GB = sum(m.size for m in MODELS) / 1e9
 
 # Diarization settings that scored best on the test scene (22/24 lines right, none missed).
@@ -69,6 +79,9 @@ MIN_LINE = 0.5  # seconds: shorter lines aren't classified on their own
 MAX_LINE = 6.0  # seconds of a line's audio given to the classifier (its middle)
 MIN_SPEAKER = 4.0  # seconds of classified audio before a speaker's overall answer is used
 MIN_OVERLAP = 0.25  # share of a line a speaker must cover to be its speaker
+MIN_PRINT = 1.0  # seconds: shorter lines get no fingerprint
+SAME_VOICE = 0.68  # fingerprint similarity (cosine of two groups' averages) to call two ids one person: on two
+# Turkish episodes 0.65 linked 92% of same-person pairs and 5.5% of different same-sex people, 0.70 80% and 1.6%
 
 
 def folder() -> Path:
@@ -247,6 +260,115 @@ class GenderModel:
         return float(e[1] / e.sum())  # labels: 0 male, 1 female
 
 
+_NFFT, _NMEL, _FRAME, _HOP = 512, 80, 400, 160
+
+
+def _mel_bank() -> np.ndarray:
+    def mel(f: np.ndarray | float) -> np.ndarray:
+        return 1127.0 * np.log(1.0 + np.asarray(f) / 700.0)
+
+    centers = np.linspace(mel(20.0), mel(SAMPLE_RATE / 2), _NMEL + 2)
+    freqs = mel(np.arange(_NFFT // 2 + 1) * SAMPLE_RATE / _NFFT)
+    bank = np.zeros((_NMEL, _NFFT // 2 + 1), np.float64)
+    for m in range(_NMEL):
+        left, mid, right = centers[m], centers[m + 1], centers[m + 2]
+        bank[m] = np.maximum(0.0, np.minimum((freqs - left) / (mid - left), (right - freqs) / (right - mid)))
+    return bank
+
+
+def fbank(x: np.ndarray) -> np.ndarray:
+    """Kaldi-style log mel filterbank (what CAM++ was trained on): 25 ms frames every 10 ms, DC removed,
+    pre-emphasis 0.97, Povey window, 80 bins from 20 Hz, then each bin's mean over the line removed."""
+    n = 1 + (len(x) - _FRAME) // _HOP
+    if n < 1:
+        return np.zeros((0, _NMEL), np.float32)
+    frames = x[np.arange(_FRAME)[None, :] + _HOP * np.arange(n)[:, None]].astype(np.float64)
+    frames -= frames.mean(axis=1, keepdims=True)
+    frames = np.concatenate([frames[:, :1] * 0.03, frames[:, 1:] - 0.97 * frames[:, :-1]], axis=1)
+    frames *= (0.5 - 0.5 * np.cos(2 * np.pi * np.arange(_FRAME) / (_FRAME - 1))) ** 0.85
+    power = np.abs(np.fft.rfft(frames, _NFFT)) ** 2
+    feats = np.log(np.maximum(power @ _BANK.T, 1.1920929e-07))
+    return (feats - feats.mean(axis=0, keepdims=True)).astype(np.float32)
+
+
+_BANK = _mel_bank()
+
+
+class Fingerprints:
+    """A voice fingerprint per line (CAM++, 512 numbers, unit length; processor, ~12 ms a line)."""
+
+    def __init__(self, path: Path | None = None):
+        import onnxruntime as ort
+
+        opts = ort.SessionOptions()
+        opts.log_severity_level = 3
+        self.session = ort.InferenceSession(str(path or folder() / FINGERPRINT.file), opts,
+                                            providers=["CPUExecutionProvider"])  # fmt: skip
+
+    def embed(self, x: np.ndarray) -> np.ndarray:
+        e = self.session.run(None, {"x": fbank(x)[None]})[0][0]
+        return e / (np.linalg.norm(e) + 1e-9)
+
+
+def owner_window(t: float) -> int:
+    """The diarization window a moment belongs to (join_windows keeps each overlap's halves apart)."""
+    return max(0, int((t - OVERLAP / 2) // (WINDOW - OVERLAP)))
+
+
+def merge_by_voice(raw: list[int | None], prints: list[np.ndarray | None], line_p: list[float | None],
+                   cues: list[Cue], turns: list[Turn]) -> list[int | None]:  # fmt: skip
+    """Give one id to ids that are one person split across diarization windows: their fingerprints agree
+    (SAME_VOICE), they never speak in the same window (there the diarizer told them apart) and their voices are
+    not one man and one woman. Merges the most similar pair first, again until none is left."""
+    windows: dict[int, set[int]] = {}
+    for t in turns:
+        windows.setdefault(t.speaker, set()).add(owner_window(t.start))
+    total: dict[int, np.ndarray] = {}
+    weight: dict[int, list[float]] = {}  # [sum of p * secs, secs]
+    for r, e, p, c in zip(raw, prints, line_p, cues, strict=True):
+        if r is None:
+            continue
+        if e is not None:
+            total[r] = total.get(r, 0) + e
+        if p is not None:
+            w = weight.setdefault(r, [0.0, 0.0])
+            w[0] += p * min(c.duration, MAX_LINE)
+            w[1] += min(c.duration, MAX_LINE)
+
+    def side(i: int) -> str | None:
+        w = weight.get(i)
+        return _side(w[0] / w[1], LEANS) if w and w[1] >= MIN_SPEAKER else None
+
+    into = {i: i for i in total}
+    while True:
+        best, pair = SAME_VOICE, None
+        ids = sorted(total)
+        for a_i, a in enumerate(ids):
+            ca = total[a] / np.linalg.norm(total[a])
+            for b in ids[a_i + 1 :]:
+                if windows.get(a, set()) & windows.get(b, set()):
+                    continue
+                sa, sb = side(a), side(b)
+                if sa and sb and sa != sb:
+                    continue
+                sim = float(ca @ (total[b] / np.linalg.norm(total[b])))
+                if sim >= best:
+                    best, pair = sim, (a, b)
+        if pair is None:
+            break
+        a, b = pair
+        total[a] = total[a] + total.pop(b)
+        windows[a] = windows.get(a, set()) | windows.pop(b, set())
+        if b in weight:
+            wa = weight.setdefault(a, [0.0, 0.0])
+            wa[0] += weight[b][0]
+            wa[1] += weight.pop(b)[1]
+        for k, v in into.items():
+            if v == b:
+                into[k] = a
+    return [into.get(r, r) if r is not None else None for r in raw]
+
+
 def _middle(audio: np.ndarray, cue: Cue) -> np.ndarray:
     mid, half = (cue.start + cue.end) / 2, min(cue.duration, MAX_LINE) / 2
     return audio[max(0, int((mid - half) * SAMPLE_RATE)) : int((mid + half) * SAMPLE_RATE)]
@@ -265,21 +387,28 @@ def decide(line_p: float | None, speaker_p: float | None) -> str | None:
 
 def label(cues: list[Cue], audio: np.ndarray, turns: list[Turn], model: GenderModel,
           should_stop: Callable[[], bool] = lambda: False,
-          on_progress: Callable[[float], None] = lambda f: None) -> dict[str, dict]:  # fmt: skip
+          on_progress: Callable[[float], None] = lambda f: None,
+          prints: Fingerprints | None = None) -> dict[str, dict]:  # fmt: skip
     """Set cue.speaker ("S1", "S2"… in order of first appearance) and cue.gender ("male" / "female" / None).
+    With `prints`, ids that are one person split across diarization windows become one (merge_by_voice).
     Returns the speakers found: {"S1": {"gender", "p_female", "seconds", "lines"}}."""
     raw = [speaker_of(c, turns) for c in cues]
-    names: dict[int, str] = {}
-    for s in raw:
-        if s is not None and s not in names:
-            names[s] = f"S{len(names) + 1}"
     line_p: list[float | None] = []
+    line_print: list[np.ndarray | None] = []
     for i, c in enumerate(cues):
         if should_stop():
             raise Cancelled()
         x = _middle(audio, c)
         line_p.append(model.p_female(x) if c.duration >= MIN_LINE and len(x) >= MIN_LINE * SAMPLE_RATE else None)
+        has_print = prints is not None and raw[i] is not None and c.duration >= MIN_PRINT
+        line_print.append(prints.embed(x) if has_print and prints is not None else None)
         on_progress((i + 1) / max(len(cues), 1))
+    if prints is not None and len({owner_window(t.start) for t in turns}) > 1:
+        raw = merge_by_voice(raw, line_print, line_p, cues, turns)
+    names: dict[int, str] = {}
+    for s in raw:
+        if s is not None and s not in names:
+            names[s] = f"S{len(names) + 1}"
     speakers: dict[str, dict] = {}
     for s, name in names.items():
         mine = [(p, c.duration) for c, r, p in zip(cues, raw, line_p, strict=True) if r == s and p is not None]

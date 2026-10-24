@@ -50,7 +50,7 @@ def schema_for(batch: list[Cue], to: dict[int, list[str]] | None = None) -> dict
     if to is None:
         lines["items"] = item(ids, None)
     else:
-        lines["prefixItems"] = [item([c.id], to[c.id] + TO_OTHER) for c in batch]
+        lines["prefixItems"] = [item([c.id], to[c.id]) for c in batch]
     return {"type": "object", "properties": {"lines": lines}, "required": ["lines"]}
 
 
@@ -204,7 +204,15 @@ def _user(batch: list[Cue], before: list[Cue], after: list[Cue], continues: dict
         f"in the same order. Never merge several ids into one item and never skip an id.\n"
         f"For each item, first copy the first few words (up to 12 characters) of THAT line's original text into "
         f'"src", '
-        + ('then who the line is spoken to in "to", ' if who is not None and given is None else "")
+        + (
+            (
+                'then who the line is spoken to in "to", '
+                if given is None
+                else 'then the line\'s "to" again in "to" ("unknown" when it has none), '
+            )
+            if who is not None
+            else ""
+        )
         + f'then write its translation in "text". Each translation must say what its own line says.\n'
         f'Lines marked "continues": true finish the previous line\'s sentence (common in {src}, where the verb '
         f"comes last): translate the sentence as a whole, but keep each part's meaning in its own id; move words "
@@ -324,7 +332,11 @@ def translate(
                     f"name in a line, it was probably a misheard ordinary word, so translate the meaning.\n\n{user}"
                 )
         msgs = [{"role": "system", "content": system}, {"role": "user", "content": user}]
-        to = {c.id: who.choices(c) for c in batch} if who is not None and given is None else None
+        to: dict[int, list[str]] | None = None
+        if who is not None and given is None:
+            to = {c.id: who.choices(c) + TO_OTHER for c in batch}
+        elif given is not None:  # the listener decided beforehand, written again just before the translation
+            to = {c.id: [given.get(c.id) or "unknown"] for c in batch}
         raw = client.chat(model, msgs, json_schema=schema_for(batch, to), temperature=0.3, reasoning="none")
         got = {i: clean_output(t, tgt_code) for i, t in _parse(raw, batch).items()}
         if given is not None:

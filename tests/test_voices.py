@@ -221,11 +221,11 @@ def test_with_voices_each_line_says_who_speaks_and_the_cast_is_listed():
 
 
 def test_the_listener_can_never_be_the_lines_own_speaker():
-    from subloc.translate import Who, schema_for
+    from subloc.translate import TO_OTHER, Who, schema_for
 
     cs = voiced([(0, "S1", "male", "a"), (3, "S2", "female", "b")])
     who = Who.of(cs)
-    lines = schema_for(cs, {c.id: who.choices(c) for c in cs})["properties"]["lines"]
+    lines = schema_for(cs, {c.id: who.choices(c) + TO_OTHER for c in cs})["properties"]["lines"]
     assert "items" not in lines  # beside prefixItems, llama.cpp would ignore the per-line rules
     first, second = lines["prefixItems"]
     assert first["properties"]["id"]["enum"] == [1] and second["properties"]["id"]["enum"] == [2]
@@ -247,3 +247,32 @@ def test_the_translators_listener_is_kept_on_each_line():
     cs = voiced([(0, "S1", "male", "Are you hungry?"), (3, "S2", "female", "No.")])
     translate(cs, LLM(), "m", "en", "ar", log=lambda m: None, workers=1)
     assert [(c.to, c.translation) for c in cs] == [("S2", "هل أنتي جائعة؟"), (None, "لا.")]  # feminine you: visible ي
+
+
+def test_fbank_has_80_bins_every_10_ms_and_no_level_offset():
+    x = (np.random.default_rng(0).standard_normal(SR) * 0.1).astype(np.float32)
+    f = voices.fbank(x)
+    assert f.shape == (98, 80)
+    assert np.allclose(voices.fbank(x * 4.0), f, atol=1e-3)  # louder audio, same features (means removed)
+    assert voices.fbank(np.zeros(100, np.float32)).shape == (0, 80)
+
+
+def unit(*v):
+    a = np.array(v, np.float32)
+    return a / np.linalg.norm(a)
+
+
+def test_one_person_split_across_windows_gets_one_id(monkeypatch):
+    monkeypatch.setattr(voices, "WINDOW", 100.0)
+    monkeypatch.setattr(voices, "OVERLAP", 10.0)
+    # windows own 0-95 s and 95-185 s. Ids 1 (window 0) and 3 (window 1) sound alike; 2 and 4 too, but 4 is a man
+    # and 2 a woman; 5 sounds like 1 but speaks in window 0 as well, where the diarizer told them apart.
+    turns = [Turn(10, 12, 1), Turn(20, 22, 2), Turn(120, 122, 3), Turn(130, 132, 4), Turn(40, 42, 5), Turn(140, 142, 5)]
+    cs = [cue(i, t.start, t.end) for i, t in enumerate(turns, 1)]
+    raw = [t.speaker for t in turns]
+    prints = [unit(1, 0, 0), unit(0, 1, 0), unit(0.98, 0.1, 0), unit(0.1, 0.99, 0), unit(0.97, 0.05, 0.1),
+              unit(0.97, 0.05, 0.1)]  # fmt: skip
+    p = [0.1, 0.95, 0.1, 0.05, 0.1, 0.1]
+    for c in cs:
+        c.end = c.start + 5  # long enough to count as a voice (MIN_SPEAKER)
+    assert voices.merge_by_voice(raw, prints, p, cs, turns) == [1, 2, 1, 4, 5, 5]
