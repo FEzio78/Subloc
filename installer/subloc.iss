@@ -54,6 +54,12 @@ arabic.RemoveData=هل تريد أيضًا حذف النماذج التي نزّ
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 Name: "explorermenu"; Description: "{cm:ExplorerMenu}"
 
+[InstallDelete]
+; An update replaces the whole program folder's libraries: files an older version had and this one doesn't would
+; otherwise stay next to the new ones (a packaged Python app can then load the wrong one). Data is elsewhere
+; (%LOCALAPPDATA%\Subloc) and is never touched here.
+Type: filesandordirs; Name: "{app}\_internal"
+
 [Files]
 Source: "..\dist\Subloc\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; The GPL needs no "I accept" page (it covers copying and changing the program, not using it): the licence and the

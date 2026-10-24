@@ -148,6 +148,7 @@ def test_voices_step_is_skipped_without_its_models(monkeypatch, tmp_path):
 def test_voices_step_runs_once_per_set_of_lines_and_never_fails_the_job(monkeypatch, tmp_path):
     monkeypatch.setattr(voices, "ready", lambda: True)
     monkeypatch.setattr(voices, "GenderModel", FakeGender)
+    monkeypatch.setattr(voices, "Fingerprints", lambda: None)
     calls = []
 
     def diarize(audio, should_stop, log):
@@ -288,6 +289,21 @@ def test_lines_listened_to_again_get_their_speakers_again(monkeypatch, tmp_path)
     proj = Project(video="v.mp4", cues=[cue(1, 0, 2)], meta=dict(meta))
     key = {"v": voices.VERSION, "source": meta["source"], "segment_v": 2}
     proj.meta["voices"] = {"key": key, "speakers": {"S1": {"gender": "male"}}}  # 'done', but the line is bare
+    pipeline._voices(tmp_path / "v.mp4", pipeline.Options(), proj, lambda: None, pipeline.Reporter(),
+                     threading.Event(), audio=audio_with([(0, 2, 0.05)]))  # fmt: skip
+    assert proj.cues[0].speaker == "S1" and proj.cues[0].gender == "male"
+
+
+def test_speakers_are_still_labelled_when_the_fingerprint_model_cannot_load(monkeypatch, tmp_path):
+    monkeypatch.setattr(voices, "ready", lambda: True)
+    monkeypatch.setattr(voices, "GenderModel", FakeGender)
+    monkeypatch.setattr(voices, "diarize", lambda audio, should_stop, log: [Turn(0, 2, 4)])
+
+    def broken():
+        raise RuntimeError("model file damaged")
+
+    monkeypatch.setattr(voices, "Fingerprints", broken)
+    proj = Project(video="v.mp4", cues=[cue(1, 0, 2)], meta={"source": {"model": "x"}, "segment_v": 2})
     pipeline._voices(tmp_path / "v.mp4", pipeline.Options(), proj, lambda: None, pipeline.Reporter(),
                      threading.Event(), audio=audio_with([(0, 2, 0.05)]))  # fmt: skip
     assert proj.cues[0].speaker == "S1" and proj.cues[0].gender == "male"

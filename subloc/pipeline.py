@@ -265,8 +265,13 @@ def _voices(video: Path, opt: Options, proj: Project, save, rep: Reporter, cance
             turns = voices.diarize(audio, cancel.is_set, rep.log)
         if cancel.is_set():
             raise Cancelled()
+        try:  # optional: without fingerprints, ids split across diarization windows just stay apart
+            prints = voices.Fingerprints()
+        except Exception as e:
+            rep.log(f"  voice fingerprints unavailable ({type(e).__name__}); speakers are not joined across windows")
+            prints = None
         speakers = voices.label(proj.cues, audio, turns, voices.GenderModel(), cancel.is_set,
-                                lambda f: rep.stage("voices", f, "Voices…"), prints=voices.Fingerprints())  # fmt: skip
+                                lambda f: rep.stage("voices", f, "Voices…"), prints=prints)  # fmt: skip
     except voices.Cancelled as e:
         raise Cancelled() from e
     except Cancelled:
