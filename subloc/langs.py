@@ -54,8 +54,9 @@ TARGET_BRIEF = {
         "(e.g. PD → المخرج, CEO → المدير التنفيذي); transliterate personal names. "
         "Use only standard Arabic letters — never Persian/Urdu letters such as پ چ ژ گ ڤ: "
         "write zh/j/ж as ج, p as ب, v as ف, ch as تش, hard g as غ (e.g. Серёжа → سيريوجا, Pavel → بافل). "
-        "When the listener is a woman, always mark the feminine on every word for her: أنتِ، لكِ، عليكِ، يمكنكِ، "
-        "كنتِ، تريدين، انظري."
+        "The listener's gender decides the form, not the speaker's: to a man أنت، لك، كنت، تريد، انظر; to a "
+        "woman أنتي، لكي، كنتي، يمكنكي، تريدين، انظري (feminine written with a visible ي, never a kasra alone); to "
+        "several أنتم، لكم، تريدون، انظروا."
     ),
 }
 
