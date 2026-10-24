@@ -913,6 +913,14 @@ class SettingsPage(QWidget):
         vbw.setLayout(vb)
         row("Speakers and voices", "Marks who speaks each line and whether the voice is a man's or a woman's "
             "(shown in the lines). Runs on this PC after listening.", vbw)  # fmt: skip
+        self.scene_pass = QComboBox()
+        self.scene_pass.setObjectName("boxed")
+        self.scene_pass.addItem("Read each scene first (recommended)", True)
+        self.scene_pass.addItem("While translating (faster)", False)
+        self.scene_pass.currentIndexChanged.connect(lambda *_: self.changed.emit())
+        row("Who is spoken to", "With speakers and voices: decides who each line is said to, for the right "
+            "\"you\" (man, woman, several). Reading each scene first is more accurate and takes a little longer.",
+            self.scene_pass)  # fmt: skip
         style = QPushButton("Change…")
         style.setIcon(icons.icon("palette", t.TEXT))
         style.clicked.connect(self.edit_style.emit)

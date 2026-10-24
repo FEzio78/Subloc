@@ -332,6 +332,23 @@ def speaker_genders(cues: list[Cue]) -> dict[str, str | None]:
     return out
 
 
+def likely_speaker(c: Cue, people_here: list[str], voice: dict[str, str | None]) -> str | None:
+    """The line's speaker id, unless its own voice contradicts that speaker's (two people under one id): then the
+    one other person in the scene with that voice, if there is exactly one, else not known. Following a wrong
+    label made the listener wrong too (measured: both such lines in the test scenes)."""
+    usual = voice.get(c.speaker or "")
+    if not c.speaker or not (usual and c.gender and usual != c.gender):
+        return c.speaker
+    match = [s for s in people_here if s != c.speaker and voice.get(s) == c.gender]
+    return match[0] if len(match) == 1 else None
+
+
+def listener_choices(c: Cue, people_here: list[str], voice: dict[str, str | None]) -> list[str]:
+    """Who the line can be spoken to: the people of its own scene, never its (likely) speaker."""
+    me = likely_speaker(c, people_here, voice)
+    return [s for s in people_here if s != me]
+
+
 def roster(cues: list[Cue], scene_of: list[int]) -> dict[int, list[str]]:
     """scene → its speakers in order of first line."""
     out: dict[int, list[str]] = {}

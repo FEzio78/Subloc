@@ -14,7 +14,7 @@ from .langs import LANGS, NUMBERS_RULE, TARGET_BRIEF, clean_output, lang_name
 from .llm import LMStudio
 from .models import Cue
 from .segment import continuation_flags, max_chars
-from .voices import has_voices, roster, scenes, speaker_genders
+from .voices import has_voices, likely_speaker, listener_choices, roster, scenes, speaker_genders
 
 BATCH = 25
 CONTEXT_BEFORE = 8
@@ -27,16 +27,16 @@ MAX_PARALLEL = 4  # user can raise it; 4 was ~2.3x throughput when VRAM had room
 TO_OTHER = ["several", "unknown"]  # "to" besides a speaker id
 
 
-def schema_for(batch: list[Cue], to: list[str] | None = None) -> dict:
+def schema_for(batch: list[Cue], to: dict[int, list[str]] | None = None) -> dict:
     """Response format for one request. The server enforces it while generating, so the model can't
     stop after the first line (it did, reproducibly, on some batches: 0/3 complete answers without
     the item count, 3/3 with it) and can't invent ids. "src" (the line's first words, copied) anchors
     each translation to its own line and lets _parse detect lines that slid onto a neighbour.
-    With `to` (the speaker ids in these scenes), each item first names who the line is spoken to: deciding the
-    addressee before writing makes the model pick the right gender and number for "you". Then every position gets
-    its own schema (prefixItems: llama.cpp, so LM Studio and the built-in translator, enforce it; with `items`
-    beside it they ignore it): its own id, and a "to" that can't be the line's own speaker (small models chose
-    that on messy speaker labels)."""
+    With `to` (cue id → who it can be spoken to: its scene's people), each item first names who the line is for:
+    deciding the addressee before writing makes the model pick the right gender and number for "you". Then every
+    position gets its own schema (prefixItems: llama.cpp, so LM Studio and the built-in translator, enforce it;
+    with `items` beside it they ignore it): its own id, and a "to" from its own scene that can't be the line's own
+    speaker (small models chose that on messy speaker labels)."""
     ids = [c.id for c in batch]
 
     def item(id_enum: list[int], to_enum: list[str] | None) -> dict:
@@ -50,7 +50,7 @@ def schema_for(batch: list[Cue], to: list[str] | None = None) -> dict:
     if to is None:
         lines["items"] = item(ids, None)
     else:
-        lines["prefixItems"] = [item([c.id], [s for s in to if s != c.speaker] + TO_OTHER) for c in batch]
+        lines["prefixItems"] = [item([c.id], to[c.id] + TO_OTHER) for c in batch]
     return {"type": "object", "properties": {"lines": lines}, "required": ["lines"]}
 
 
@@ -69,7 +69,17 @@ VOICES_RULE = (
 )
 
 
-def _system(src: str, tgt: str, tgt_code: str, title: str | None, voices: bool = False) -> str:
+GIVEN_RULE = (
+    ' Lines may say who speaks ("speaker", e.g. "S1"), how the voice sounds ("voice": "man" or "woman", measured '
+    'from the audio) and who the line is spoken to ("to": a speaker id, or "several" for more than one person; '
+    '"to_voice": that person\'s voice), worked out from the whole scene; missing = not known. Words for the '
+    'listener (you, your, commands) take the gender and number of the person in "to" (a woman: feminine '
+    "forms; several people: plural), and words about the speaker (I am tired, I am sure) take the speaker's own "
+    "voice. When the listener or their gender is not known, use the masculine singular."
+)
+
+
+def _system(src: str, tgt: str, tgt_code: str, title: str | None, voices: bool = False, given: bool = False) -> str:
     s = (
         f"You translate video subtitles from {src} into {tgt}. "
         f"Each input line is one subtitle shown on screen. Keep the speaker's tone (casual, rude, polite, joking). "
@@ -89,7 +99,7 @@ def _system(src: str, tgt: str, tgt_code: str, title: str | None, voices: bool =
         "use the plural form; if it addresses one person, match that person's gender when the context shows it."
     )
     if voices:
-        s += VOICES_RULE
+        s += GIVEN_RULE if given else VOICES_RULE
     if title:
         s += f"\n\nThe video is titled: {title}"
     return s
@@ -128,11 +138,11 @@ class Who:
         return cls({c.id: n for c, n in zip(cues, scene_of, strict=True)}, roster(cues, scene_of),
                    speaker_genders(cues))  # fmt: skip
 
-    def speakers_in(self, batch: list[Cue]) -> list[str]:
-        out: list[str] = []
-        for n in dict.fromkeys(self.scene[c.id] for c in batch):
-            out += [s for s in self.people.get(n, []) if s not in out]
-        return out
+    def speaker(self, c: Cue) -> str | None:
+        return likely_speaker(c, self.people.get(self.scene[c.id], []), self.voice)
+
+    def choices(self, c: Cue) -> list[str]:
+        return listener_choices(c, self.people.get(self.scene[c.id], []), self.voice)
 
     def people_text(self, batch: list[Cue]) -> str:
         rows = []
@@ -143,22 +153,29 @@ class Who:
 
 
 def _tag(c: Cue, who: "Who | None") -> str:
-    return f"[{c.speaker}] " if who is not None and c.speaker else ""
+    speaker = who.speaker(c) if who is not None else None
+    return f"[{speaker}] " if speaker else ""
 
 
 def _user(batch: list[Cue], before: list[Cue], after: list[Cue], continues: dict[int, bool], src: str, tgt: str,
-          tgt_code: str | None = None, who: Who | None = None) -> str:  # fmt: skip
+          tgt_code: str | None = None, who: Who | None = None,
+          given: dict[int, str | None] | None = None) -> str:  # fmt: skip
     """`continues`: cue id → is the rest of the previous cue's sentence (see continuation_flags).
-    `who`: speakers and voices; then each line says who speaks and the answer says who it is spoken to."""
+    `who`: speakers and voices; then each line says who speaks and the answer says who it is spoken to, unless
+    `given` already says that (subloc.addressee: decided over whole scenes)."""
     lines = []
     for c in batch:
         item: dict = {"id": c.id, "max_chars": max_chars(c, tgt_code), "text": c.text}
         if who is not None:
             item["scene"] = who.scene[c.id]
-            if c.speaker:
-                item["speaker"] = c.speaker
+            if speaker := who.speaker(c):
+                item["speaker"] = speaker
             if c.gender in VOICE:
                 item["voice"] = VOICE[c.gender]
+            if given is not None and (to := given.get(c.id)):
+                item["to"] = to
+                if to in who.voice and who.voice[to] in VOICE:
+                    item["to_voice"] = VOICE[who.voice[to]]  # type: ignore[index]
         if c.lang and src == LANGS["mixed"]:
             item["lang"] = lang_name(c.lang)
         if c.kind in ("song", "caption"):
@@ -187,7 +204,7 @@ def _user(batch: list[Cue], before: list[Cue], after: list[Cue], continues: dict
         f"in the same order. Never merge several ids into one item and never skip an id.\n"
         f"For each item, first copy the first few words (up to 12 characters) of THAT line's original text into "
         f'"src", '
-        + ('then who the line is spoken to in "to", ' if who is not None else "")
+        + ('then who the line is spoken to in "to", ' if who is not None and given is None else "")
         + f'then write its translation in "text". Each translation must say what its own line says.\n'
         f'Lines marked "continues": true finish the previous line\'s sentence (common in {src}, where the verb '
         f"comes last): translate the sentence as a whole, but keep each part's meaning in its own id; move words "
@@ -277,11 +294,14 @@ def translate(
     log: Callable[[str], None] = print,
     workers: int = PARALLEL,
     should_stop: Callable[[], bool] = lambda: False,
+    listeners: dict[int, str | None] | None = None,
 ) -> None:
-    """Fill cue.translation in place. Skips cues already translated (resume)."""
+    """Fill cue.translation in place. Skips cues already translated (resume). `listeners` (subloc.addressee):
+    who each line is spoken to, decided beforehand; without it the answer says that too."""
     src, tgt = lang_name(src_code), lang_name(tgt_code)
     who = Who.of(cues)  # speakers and voices known (subloc.voices): the answer also says who each line is to
-    system = _system(src, tgt, tgt_code, title, voices=who is not None)
+    given = listeners if who is not None else None
+    system = _system(src, tgt, tgt_code, title, voices=who is not None, given=given is not None)
     pos = {c.id: i for i, c in enumerate(cues)}
     flags = {c.id: f for c, f in zip(cues, continuation_flags(cues), strict=True)}
 
@@ -292,7 +312,7 @@ def translate(
         ids = {c.id for c in batch}
         # Only mark a continuation when the cue it continues is in this same request.
         cont = {c.id: flags[c.id] and pos[c.id] > 0 and cues[pos[c.id] - 1].id in ids for c in batch}
-        user = _user(batch, before, after, cont, src, tgt, tgt_code, who)
+        user = _user(batch, before, after, cont, src, tgt, tgt_code, who, given)
         if glossary:
             # Only the names that occur here (glossary may be large; keeps prompts small and focused).
             names = glossary.relevant(" ".join(c.text for c in [*before, *batch, *after]))
@@ -304,10 +324,14 @@ def translate(
                     f"name in a line, it was probably a misheard ordinary word, so translate the meaning.\n\n{user}"
                 )
         msgs = [{"role": "system", "content": system}, {"role": "user", "content": user}]
-        to = who.speakers_in(batch) if who is not None else None
+        to = {c.id: who.choices(c) for c in batch} if who is not None and given is None else None
         raw = client.chat(model, msgs, json_schema=schema_for(batch, to), temperature=0.3, reasoning="none")
         got = {i: clean_output(t, tgt_code) for i, t in _parse(raw, batch).items()}
-        if who is not None:
+        if given is not None:
+            for c in batch:
+                if c.id in got:
+                    c.to = given.get(c.id)
+        elif who is not None:
             targets = _targets(raw)
             for c in batch:
                 if c.id in got:

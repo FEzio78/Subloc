@@ -49,6 +49,8 @@ class Settings:
     llm_model: str | None = None  # translator on a server: model id (None = the one loaded there)
     parallel: int = 2
     glossary: bool = True
+    voices: bool = True  # speakers and voices (Settings → Speakers and voices)
+    scene_pass: bool = True  # read each scene first to find who is spoken to (Settings → Who is spoken to)
     style: SubStyle | None = None  # None = the default look (plain .srt)
     provider: str = "server"  # "builtin" (Subloc runs llama-server) | "server" (LM Studio, Ollama…)
     server_url: str = "http://localhost:1234"
@@ -75,6 +77,8 @@ def settings() -> Settings:
         st.llm_model = val("model")
         st.parallel = max(1, min(4, int(val("parallel") or 2)))
         st.glossary = (val("glossary") or "true").lower() != "false"
+        st.voices = (val("voices") or "true").lower() != "false"
+        st.scene_pass = (val("scene_pass") or "true").lower() != "false"
         raw = val("style")
         style = SubStyle.from_dict(json.loads(raw)) if raw else DEFAULT
         st.style = None if style == DEFAULT else style
@@ -103,6 +107,7 @@ def make_options(st: Settings, **overrides: Any) -> Options:
     opt = Options(
         target=st.target, source=st.source, asr_model=st.asr_model, llm_model=None if engine else st.llm_model,
         llm_url=st.server_url, engine=engine, parallel=st.parallel, auto_glossary=st.glossary, style=st.style,
+        voices=st.voices, scene_pass=st.scene_pass,
         prefer_builtin_subs=True,
     )  # fmt: skip
     return replace(opt, **overrides)

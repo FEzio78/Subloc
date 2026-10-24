@@ -45,6 +45,7 @@ class Options:
     engine: Any = None  # BuiltinEngine when Subloc runs its own translator (else llm_url is used)
     prefer_builtin_subs: bool = False  # batch: per file, translate its own subtitles when it has them
     voices: bool = True  # who speaks each line + man/woman voice, when those models are installed (subloc.voices)
+    scene_pass: bool = True  # with voices: first read whole scenes to decide who each line is to (subloc.addressee)
 
 
 class Reporter:
@@ -58,7 +59,7 @@ class Reporter:
         self.log(f"WARNING: {msg}")
 
     def stage(self, name: str, frac: float, detail: str = "") -> None:
-        """name: audio | transcribe | voices | names | translate | done"""
+        """name: audio | transcribe | voices | names | listeners | translate | done"""
 
     def cues(self, cues: list[Cue]) -> None:
         """Called whenever subtitle lines change (after transcription, after each translation batch)."""
@@ -308,6 +309,8 @@ def _translate_and_write(video, opt, proj, save, rep, cancel, outputs):
         except OSError as e:  # read-only folder: still use it for this run
             rep.log(f"  couldn't save {gpath.name}: {e}")
 
+    listeners = _listeners(video, opt, proj, save, rep, cancel, client, model, tr_key, workers)
+    check()
     rep.log(f"Translating {proj.language} → {opt.target} with {model}…")
     rep.stage("translate", 0, model)
     t0 = time.time()
@@ -333,6 +336,7 @@ def _translate_and_write(video, opt, proj, save, rep, cancel, outputs):
         log=rep.log,
         should_stop=cancel.is_set,
         workers=workers,
+        listeners=listeners,
     )
     save()
     check()
@@ -344,6 +348,37 @@ def _translate_and_write(video, opt, proj, save, rep, cancel, outputs):
         rep.log(f"Wrote {path.name}")
     rep.stage("done", 1)
     return proj, outputs
+
+
+def _listeners(video, opt, proj, save, rep, cancel, client, model, tr_key, workers) -> dict[int, str | None] | None:
+    """Who each line is spoken to, read from whole scenes before translating (subloc.addressee), saved with the
+    project so a stopped job doesn't ask again. None (translation then decides it per batch) without voices,
+    with the option off, or when nothing came back."""
+    from . import addressee
+    from .translate import Who
+
+    who = Who.of(proj.cues)
+    if not opt.scene_pass or who is None:
+        return None
+    key = {**tr_key, "voices": proj.meta.get("voices", {}).get("key")}
+    saved = proj.meta.get("listeners", {})
+    if saved.get("key") == key and not opt.retranslate:
+        return {int(k): v for k, v in saved.get("to", {}).items()} or None
+    rep.stage("listeners", 0, "Reading scenes…")
+    rep.log("Reading each scene to find who is spoken to…")
+    t0 = time.time()
+    found = addressee.decide(
+        proj.cues, client, model, proj.language, who.scene, who.people, who.voice, title=video.stem,
+        on_progress=lambda d, n: rep.stage("listeners", d / max(n, 1), f"{d}/{n} lines"),
+        log=rep.log, workers=workers, should_stop=cancel.is_set,
+    )  # fmt: skip
+    if cancel.is_set():
+        raise Cancelled()
+    proj.meta["listeners"] = {"key": key, "to": {str(k): v for k, v in found.items()}}
+    save()
+    rep.log(f"  listener found for {sum(1 for v in found.values() if v)}/{len(proj.cues)} lines, "
+            f"{time.time() - t0:.0f}s")  # fmt: skip
+    return found or None
 
 
 def _client(opt: Options) -> LMStudio:
@@ -405,9 +440,12 @@ def retranslate_lines(video: Path, cue_ids: list[int], opt: Options) -> Project:
     client = _client(opt)
     model = _resolve_model(client, opt)
     glossary = Glossary.load(glossary_path(video), target) if opt.auto_glossary else None
+    saved = proj.meta.get("listeners", {}).get("to") if opt.scene_pass else None
+    listeners = {int(k): v for k, v in saved.items()} if saved else None  # who each line is to, as decided before
     try:
         translate(proj.cues, client, model, proj.language, target, title=video.stem, glossary=glossary,
-                  log=lambda m: None, workers=max(1, min(opt.parallel, MAX_PARALLEL)))  # fmt: skip
+                  log=lambda m: None, workers=max(1, min(opt.parallel, MAX_PARALLEL)),
+                  listeners=listeners)  # fmt: skip
     finally:
         for c in proj.cues:
             if c.id in wanted and not c.translation:

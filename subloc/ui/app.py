@@ -305,6 +305,7 @@ class MainWindow(HomeMixin, LibraryMixin, QueueMixin, QMainWindow):
         select_data(self.settingsp.glossary, str(s.value("glossary", "true")).lower() != "false")
         select_data(self.settingsp.intro, "off" if str(s.value("intro", "true")).lower() == "false" else "on")
         select_data(self.settingsp.voices, str(s.value("voices", "true")).lower() != "false")
+        select_data(self.settingsp.scene_pass, str(s.value("scene_pass", "true")).lower() != "false")
         self._show_voices()
         self._show_style_name()
 
@@ -318,6 +319,7 @@ class MainWindow(HomeMixin, LibraryMixin, QueueMixin, QMainWindow):
         s.setValue("glossary", "true" if self.settingsp.glossary.currentData() else "false")
         s.setValue("intro", "false" if self.settingsp.intro.currentData() == "off" else "true")
         s.setValue("voices", "true" if self.settingsp.voices.currentData() else "false")
+        s.setValue("scene_pass", "true" if self.settingsp.scene_pass.currentData() else "false")
 
     def _load_style(self) -> SubStyle:
         raw = self.settings.value("style")
@@ -343,6 +345,7 @@ class MainWindow(HomeMixin, LibraryMixin, QueueMixin, QMainWindow):
             auto_glossary=bool(self.settingsp.glossary.currentData()),
             style=style,
             voices=bool(self.settingsp.voices.currentData()),
+            scene_pass=bool(self.settingsp.scene_pass.currentData()),
         )
 
     # ---------------------------------------------------------------- translator status
@@ -562,6 +565,13 @@ class MainWindow(HomeMixin, LibraryMixin, QueueMixin, QMainWindow):
         elif name == "voices":  # after listening: shown in the Listening box
             st.set("audio", "done", tr("Read"))
             st.set("transcribe", "now", tr("Voices {n}", n=f"{frac:.0%}") if frac else tr("Speakers…"))
+        elif name == "listeners":  # before translating: shown in the Translating box
+            for k, v in (("audio", tr("Read")), ("transcribe", tr("{n} lines", n=len(self.cues)))):
+                if st.boxes[k].state != "done":
+                    st.set(k, "done", v)
+            if st.boxes["names"].state != "done":
+                st.set("names", "done", tr("Skipped"))
+            st.set("translate", "now", tr("Scenes {n}", n=f"{frac:.0%}"))
         elif name == "names":
             st.set("audio", "done", tr("Read"))
             if self.jobp.stages.boxes["transcribe"].state != "done":

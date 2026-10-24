@@ -224,7 +224,8 @@ def test_the_listener_can_never_be_the_lines_own_speaker():
     from subloc.translate import Who, schema_for
 
     cs = voiced([(0, "S1", "male", "a"), (3, "S2", "female", "b")])
-    lines = schema_for(cs, Who.of(cs).speakers_in(cs))["properties"]["lines"]
+    who = Who.of(cs)
+    lines = schema_for(cs, {c.id: who.choices(c) for c in cs})["properties"]["lines"]
     assert "items" not in lines  # beside prefixItems, llama.cpp would ignore the per-line rules
     first, second = lines["prefixItems"]
     assert first["properties"]["id"]["enum"] == [1] and second["properties"]["id"]["enum"] == [2]
