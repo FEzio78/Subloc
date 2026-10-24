@@ -31,7 +31,7 @@ from .media import SAMPLE_RATE
 from .models import Cue
 
 # Bump when the method changes in a way that makes saved results wrong: projects then label their lines again.
-VERSION = 1
+VERSION = 2  # 2: long audio in overlapping windows (more than 8 speakers in a film)
 
 
 @dataclass(frozen=True)
@@ -124,19 +124,77 @@ def _write_wav(audio: np.ndarray, path: Path) -> None:
         w.writeframes(pcm.tobytes())
 
 
+# Nemotron follows at most 8 speakers at a time: in a film, later characters found no free slot and their lines
+# went unheard (96-min film: 114 of 660 lines). So long audio is heard in overlapping windows, and speakers are
+# linked from one window to the next by who talks at the same time in the overlap (also 4x faster: 41 s vs 184 s).
+WINDOW = 600.0  # seconds
+OVERLAP = 60.0
+MIN_LINK = 1.0  # seconds of the same speech in the overlap to call two labels one person
+
+
+def window_starts(seconds: float) -> list[float]:
+    starts = [0.0]
+    while starts[-1] + WINDOW < seconds:
+        starts.append(starts[-1] + WINDOW - OVERLAP)
+    return starts
+
+
+def join_windows(parts: list[list[Turn]], starts: list[float]) -> list[Turn]:
+    """One list of turns with speaker numbers that run through all windows. A label in a new window is the person
+    it talks together with longest in the overlap; a label with no such partner is a new person."""
+    if not parts:
+        return []
+    names: dict[int, int] = {}
+    for t in parts[0]:
+        names.setdefault(t.speaker, len(names) + 1)
+    out = [Turn(t.start, t.end, names[t.speaker]) for t in parts[0]]
+    next_id = len(names) + 1
+    for part, lo in zip(parts[1:], starts[1:], strict=True):
+        hi = lo + OVERLAP
+        together: dict[tuple[int, int], float] = {}
+        for a in out:
+            if a.end <= lo:
+                continue
+            for b in part:
+                o = min(a.end, b.end, hi) - max(a.start, b.start, lo)
+                if o > 0:
+                    together[(b.speaker, a.speaker)] = together.get((b.speaker, a.speaker), 0.0) + o
+        mapping: dict[int, int] = {}
+        taken: set[int] = set()
+        for (new_label, old_id), secs in sorted(together.items(), key=lambda kv: -kv[1]):
+            if secs >= MIN_LINK and new_label not in mapping and old_id not in taken:
+                mapping[new_label] = old_id
+                taken.add(old_id)
+        for local in sorted({t.speaker for t in part}):
+            if local not in mapping:
+                mapping[local] = next_id
+                next_id += 1
+        mid = lo + OVERLAP / 2  # the overlap: first half from the old window, second half from the new one
+        out = [t for t in out if t.start < mid] + [
+            Turn(t.start, t.end, mapping[t.speaker]) for t in part if t.start >= mid
+        ]
+    return out
+
+
 def diarize(audio: np.ndarray, should_stop: Callable[[], bool] = lambda: False,
             log: Callable[[str], None] = lambda m: None) -> list[Turn]:  # fmt: skip
     """Speaker turns for 16 kHz mono audio. Tries the graphics card (Vulkan), then the processor."""
     program = exe()
     if program is None:
         raise FileNotFoundError("nemo-speech.exe is missing (vendor/nemo-speech).")
+    seconds = len(audio) / SAMPLE_RATE
+    starts = window_starts(seconds)
     with tempfile.TemporaryDirectory(prefix="subloc-voices-") as tmp:
-        wav, out, errfile = Path(tmp) / "audio.wav", Path(tmp) / "turns.json", Path(tmp) / "err.txt"
-        _write_wav(audio, wav)
+        src, out, errfile = Path(tmp) / "in", Path(tmp) / "out", Path(tmp) / "err.txt"
+        src.mkdir()
+        for i, s0 in enumerate(starts):
+            piece = audio[int(s0 * SAMPLE_RATE) : int(min(seconds, s0 + WINDOW) * SAMPLE_RATE)]
+            _write_wav(piece, src / f"{i:03}.wav")
         err = ""
         for device in ("vulkan", "cpu"):
-            cmd = [str(program), "diarize", str(wav), "--model", str(folder() / DIARIZER.file), "--device", device,
-                   "--format", "json", "-o", str(out), "--force", *DIARIZE_ARGS]  # fmt: skip
+            # A folder in one run: the model loads once for all windows (2 at a time).
+            cmd = [str(program), "diarize", str(src), "--model", str(folder() / DIARIZER.file), "--device", device,
+                   "--format", "json", "--output-dir", str(out), "--force", "-c", "2", *DIARIZE_ARGS]  # fmt: skip
             with errfile.open("wb") as ef:  # a file, not a pipe: a full pipe would stall the program
                 p = proc.popen(cmd, stdout=subprocess.DEVNULL, stderr=ef)
                 while p.poll() is None:
@@ -146,9 +204,13 @@ def diarize(audio: np.ndarray, should_stop: Callable[[], bool] = lambda: False,
                         raise Cancelled()
                     time.sleep(0.2)
             err = errfile.read_text(encoding="utf-8", errors="replace").strip()
-            if p.returncode == 0 and out.exists():
-                segs = json.loads(out.read_text(encoding="utf-8")).get("segments", [])
-                return [Turn(float(s["start"]), float(s["end"]), int(s["speaker"])) for s in segs]
+            found = {f.stem: f for f in out.rglob("*.json")} if out.exists() else {}
+            if p.returncode == 0 and all(f"{i:03}" in found for i in range(len(starts))):
+                parts = []
+                for i, s0 in enumerate(starts):
+                    segs = json.loads(found[f"{i:03}"].read_text(encoding="utf-8")).get("segments", [])
+                    parts.append([Turn(float(x["start"]) + s0, float(x["end"]) + s0, int(x["speaker"])) for x in segs])
+                return join_windows(parts, starts)
             log(f"  speakers on {device} failed ({p.returncode}): {err[-200:]}")
         raise RuntimeError(f"Finding speakers failed: {err[-300:]}")
 

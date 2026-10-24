@@ -7,7 +7,7 @@ import pytest
 
 from subloc import pipeline, voices
 from subloc.models import Cue, Project
-from subloc.voices import Turn, decide, label, speaker_of
+from subloc.voices import Turn, decide, join_windows, label, speaker_of
 
 SR = 16000
 
@@ -82,10 +82,17 @@ def test_voice_facts_are_saved_with_the_project(tmp_path):
 
 
 class FakeProcess:
-    def __init__(self, cmd, out_json, returncode=0):
+    """nemo-speech on a folder: writes OUT/<name>.json for every WAV in it (each window says speaker 1 talks)."""
+
+    def __init__(self, cmd, returncode=0):
         self.returncode, self.cmd = returncode, cmd
         if returncode == 0:
-            Path(cmd[cmd.index("-o") + 1]).write_text(json.dumps(out_json), encoding="utf-8")
+            out = Path(cmd[cmd.index("--output-dir") + 1])
+            out.mkdir(parents=True, exist_ok=True)
+            for wav in sorted(Path(cmd[2]).glob("*.wav")):
+                assert wav.read_bytes()[:4] == b"RIFF"
+                segs = {"segments": [{"start": 1.5, "end": 2.5, "speaker": 1}]}
+                (out / f"{wav.stem}.json").write_text(json.dumps(segs), encoding="utf-8")
 
     def poll(self):
         return self.returncode
@@ -102,16 +109,32 @@ def test_diarize_tries_the_graphics_card_then_the_processor(monkeypatch, tmp_pat
     seen = []
 
     def popen(cmd, **kw):
-        device = cmd[cmd.index("--device") + 1]
-        seen.append(device)
-        assert Path(cmd[2]).read_bytes()[:4] == b"RIFF"  # the audio went in as a WAV file
-        return FakeProcess(cmd, {"segments": [{"start": 0.5, "end": 2.0, "speaker": 1}]},
-                           returncode=1 if device == "vulkan" else 0)  # fmt: skip
+        seen.append(cmd[cmd.index("--device") + 1])
+        return FakeProcess(cmd, returncode=1 if seen[-1] == "vulkan" else 0)
 
     monkeypatch.setattr(voices.proc, "popen", popen)
     turns = voices.diarize(np.zeros(SR, np.float32))
     assert seen == ["vulkan", "cpu"]
-    assert turns == [Turn(0.5, 2.0, 1)]
+    assert turns == [Turn(1.5, 2.5, 1)]
+
+
+def test_long_audio_is_heard_in_overlapping_windows(monkeypatch, tmp_path):
+    monkeypatch.setattr(voices, "exe", lambda: tmp_path / "nemo-speech.exe")
+    monkeypatch.setattr(voices.proc, "popen", lambda cmd, **kw: FakeProcess(cmd))
+    monkeypatch.setattr(voices, "WINDOW", 10.0)
+    monkeypatch.setattr(voices, "OVERLAP", 2.0)
+    assert voices.window_starts(25.0) == [0.0, 8.0, 16.0]
+    turns = voices.diarize(np.zeros(25 * SR, np.float32))
+    assert [(t.start, t.end) for t in turns] == [(1.5, 2.5), (9.5, 10.5), (17.5, 18.5)]  # on the film's clock
+
+
+def test_speakers_are_linked_through_the_overlap(monkeypatch):
+    monkeypatch.setattr(voices, "OVERLAP", 10.0)
+    first = [Turn(0, 50, 1), Turn(52, 58, 2), Turn(60, 95, 1)]  # window 0-100 s
+    # window 90-190 s: its "2" talks with the first window's "1" in the overlap (90-100), its "1" is someone new
+    second = [Turn(91, 99, 2), Turn(120, 150, 1), Turn(160, 170, 2)]
+    turns = join_windows([first, second], [0.0, 90.0])
+    assert [(t.start, t.speaker) for t in turns] == [(0, 1), (52, 2), (60, 1), (120, 3), (160, 1)]
 
 
 def test_voices_step_is_skipped_without_its_models(monkeypatch, tmp_path):

@@ -236,9 +236,10 @@ def _voices(video: Path, opt: Options, proj: Project, save, rep: Reporter, cance
     save()
     rep.cues(proj.cues)
     known = sum(1 for c in proj.cues if c.gender)
-    rep.log(f"  {len(speakers)} speakers ("
-            + ", ".join(f"{n} {s['gender'] or '?'}" for n, s in speakers.items())
-            + f"), voice known on {known}/{len(proj.cues)} lines, {time.time() - t0:.0f}s")  # fmt: skip
+    kinds = [s["gender"] for s in speakers.values()]
+    rep.log(f"  {len(speakers)} speakers ({kinds.count('female')} women, {kinds.count('male')} men, "
+            f"{kinds.count(None)} not sure), voice known on {known}/{len(proj.cues)} lines, "
+            f"{time.time() - t0:.0f}s")  # fmt: skip
     rep.stage("voices", 1, f"{len(speakers)} speakers")
 
 
