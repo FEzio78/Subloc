@@ -65,9 +65,12 @@ All four checks must pass before committing.
 
 ## Status (2026-10-24)
 
-**v0.2.0 built on `dev`, not released** (`dist\Subloc-0.2.0-setup.exe`, 159 MB): installed silently into a temp
-folder, the installed CLI ran a clip end to end (Whisper GPU, quiet-speech pass, nemo-speech speakers, names,
-Arabic), the window opened, uninstalled clean. Release notes not written yet; `main` still = v0.1.0.
+**v0.2.0 released** (https://github.com/FEzio78/Subloc/releases/tag/v0.2.0, tag on `769dc79`, `main` = `dev`):
+installer `Subloc-0.2.0-setup.exe`, 159 MB, SHA-256 `1bc609f2…a04668e4` (GitHub's digest matched). Tested: fresh
+install (a clip end to end to Arabic, window opens) and update over 0.1.0 (in place, old `_internal` cleared, one
+uninstall entry). What's new: speakers and voices, who is spoken to, visible feminine ي, "Spoken to" fix, names
+with gender, quiet-speech second listen (PLAN.md 2.7, 2.8). Notes: `dist/release-notes-v0.2.0.md` (git-ignored).
+Lesson: run the tests with an empty `SUBLOC_DATA` too — CI has no models (a test once loaded a real one).
 
 ## Status (2026-10-22)
 
@@ -105,7 +108,7 @@ PATH from its first runtime hook (`installer/rth_system_path.py`): other program
 
 ## Next
 
-1. **Speakers and who is spoken to** (on `dev`): design + results in PLAN.md 2.7. Built: (a) `voices.py`
+1. **Speakers and who is spoken to** (released in 0.2.0; next work on `dev`): design + results in PLAN.md 2.7. Built: (a) `voices.py`
    (Nemotron via bundled nemo-speech Vulkan + one ONNX gender classifier; per-line speaker/gender, shown in
    Lines) and (b) translation with scenes, speakers, voices and a `to` field (synthetic test en→ar: Gemma 26B
    12–13 → 21–22 of 22 lines right, E4B 10 → 19–21; Turkish series and an English film with official Arabic:
