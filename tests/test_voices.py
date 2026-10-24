@@ -276,3 +276,18 @@ def test_one_person_split_across_windows_gets_one_id(monkeypatch):
     for c in cs:
         c.end = c.start + 5  # long enough to count as a voice (MIN_SPEAKER)
     assert voices.merge_by_voice(raw, prints, p, cs, turns) == [1, 2, 1, 4, 5, 5]
+
+
+def test_lines_listened_to_again_get_their_speakers_again(monkeypatch, tmp_path):
+    """Listening again with the same settings kept the old 'done' mark while the new lines had no labels."""
+    monkeypatch.setattr(voices, "ready", lambda: True)
+    monkeypatch.setattr(voices, "GenderModel", FakeGender)
+    monkeypatch.setattr(voices, "Fingerprints", lambda: None)
+    monkeypatch.setattr(voices, "diarize", lambda audio, should_stop, log: [Turn(0, 2, 4)])
+    meta = {"source": {"model": "x"}, "segment_v": 2}
+    proj = Project(video="v.mp4", cues=[cue(1, 0, 2)], meta=dict(meta))
+    key = {"v": voices.VERSION, "source": meta["source"], "segment_v": 2}
+    proj.meta["voices"] = {"key": key, "speakers": {"S1": {"gender": "male"}}}  # 'done', but the line is bare
+    pipeline._voices(tmp_path / "v.mp4", pipeline.Options(), proj, lambda: None, pipeline.Reporter(),
+                     threading.Event(), audio=audio_with([(0, 2, 0.05)]))  # fmt: skip
+    assert proj.cues[0].speaker == "S1" and proj.cues[0].gender == "male"

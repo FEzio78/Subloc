@@ -185,6 +185,9 @@ def run(
             if not opt.keep_asr_loaded:
                 unload_model()
         proj.meta["source"] = asr_key
+        # New lines: what was found about the old ones (speakers, listeners) no longer applies to them.
+        for stale in ("voices", "listeners"):
+            proj.meta.pop(stale, None)
         proj.cues = segment(list(proj.asr_cues))
         proj.meta["segment_v"] = SEGMENT_VERSION
         if not proj.cues:
@@ -243,7 +246,10 @@ def _voices(video: Path, opt: Options, proj: Project, save, rep: Reporter, cance
     if not opt.voices or not voices.ready():
         return
     key = {"v": voices.VERSION, "source": proj.meta.get("source"), "segment_v": proj.meta.get("segment_v")}
-    if proj.meta.get("voices", {}).get("key") == key:
+    saved = proj.meta.get("voices", {})
+    # Done for these lines, unless they carry no labels although speakers were found (a project listened to again
+    # with the same settings lost them before this check existed).
+    if saved.get("key") == key and (voices.has_voices(proj.cues) or not saved.get("speakers")):
         return
     rep.stage("voices", 0, "Finding speakers…")
     rep.log("Finding speakers and their voices…")
