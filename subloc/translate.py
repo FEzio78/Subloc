@@ -8,7 +8,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
-from .errors import ContextTooLong, ModelNotAvailable, TranslatorUnavailable
+from .errors import ContextTooLong, ModelNotAvailable, SublocError, TranslatorUnavailable
 from .glossary import Glossary
 from .langs import LANGS, NUMBERS_RULE, TARGET_BRIEF, clean_output, lang_name
 from .llm import LMStudio
@@ -325,6 +325,21 @@ def translate(
     pos = {c.id: i for i, c in enumerate(cues)}
     flags = {c.id: f for c, f in zip(cues, continuation_flags(cues), strict=True)}
 
+    plain = [False]  # the server refused the per-line answer format once: ask the plain way from then on
+
+    def ask(msgs: list[dict], batch: list[Cue], to: dict[int, list[str]] | None) -> str:
+        """The per-line format ("to", prefixItems) is enforced by llama.cpp (LM Studio, the built-in
+        translator); a server that rejects it gets the plain format, so voices never cost a translation."""
+        if to is not None and not plain[0]:
+            try:
+                return client.chat(model, msgs, json_schema=schema_for(batch, to), temperature=0.3, reasoning="none")
+            except (ContextTooLong, TranslatorUnavailable, ModelNotAvailable):
+                raise
+            except SublocError as e:
+                plain[0] = True
+                log(f"  the translator didn't accept the speaker format ({e}); translating without it")
+        return client.chat(model, msgs, json_schema=schema_for(batch), temperature=0.3, reasoning="none")
+
     def call(batch: list[Cue]) -> dict[int, str]:
         i0, i1 = pos[batch[0].id], pos[batch[-1].id]
         before = cues[max(0, i0 - CONTEXT_BEFORE) : i0]
@@ -357,7 +372,7 @@ def translate(
                     to[c.id] = who.choices(c) + TO_OTHER
                 else:
                     to[c.id] = ["unknown"]
-        raw = client.chat(model, msgs, json_schema=schema_for(batch, to), temperature=0.3, reasoning="none")
+        raw = ask(msgs, batch, to)
         got = {i: clean_output(t, tgt_code) for i, t in _parse(raw, batch).items()}
         targets = _targets(raw) if who is not None else {}
         for c in batch:

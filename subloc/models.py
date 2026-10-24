@@ -55,12 +55,13 @@ class Project:
         data = json.loads(path.read_text(encoding="utf-8"))
         for key in ("asr_cues", "ocr_cues", "cues"):
             data[key] = [_cue(c) for c in data.get(key, [])]
-        return cls(**data)
+        # Fields a newer (or older) Subloc wrote that this one doesn't know are left out, not an error.
+        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
 
 
 def _cue(d: dict) -> Cue:
-    d = dict(d)
-    d["words"] = [Word(**w) for w in d.get("words", [])]
+    d = {k: v for k, v in d.items() if k in Cue.__dataclass_fields__}
+    d["words"] = [Word(**{k: v for k, v in w.items() if k in Word.__dataclass_fields__}) for w in d.get("words", [])]
     return Cue(**d)
 
 

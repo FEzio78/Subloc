@@ -176,7 +176,11 @@ def run(
             check()
             rep.stage("transcribe", 1.0, "Listening again to quiet speech…")
             speech = [(t.start, t.end) for t in turns] if turns is not None else None
-            extra = rescue(audio, proj.asr_cues, proj.language, opt.asr_model, speech, cancel.is_set)
+            try:
+                extra = rescue(audio, proj.asr_cues, proj.language, opt.asr_model, speech, cancel.is_set)
+            except Exception as e:  # an extra pass: the first one's lines stand on their own
+                rep.log(f"  second listen to quiet speech failed ({type(e).__name__}: {e}); keeping the first pass")
+                extra = []
             check()
             if extra:
                 proj.asr_cues = sorted([*proj.asr_cues, *extra], key=lambda c: c.start)
@@ -411,7 +415,14 @@ LISTENER_CHOICES = ("man", "woman", "several")
 def fixed_listeners(proj: Project) -> dict[int, str | None]:
     """The listeners set by hand that still belong to their line (its text unchanged since)."""
     text = {c.id: c.text for c in proj.cues}
-    return {int(k): v["to"] for k, v in proj.meta.get(FIXED, {}).items() if text.get(int(k)) == v.get("text")}
+    out: dict[int, str | None] = {}
+    for k, v in (proj.meta.get(FIXED) or {}).items():  # tolerate hand-edited or damaged entries
+        try:
+            if isinstance(v, dict) and v.get("to") in LISTENER_CHOICES and text.get(int(k)) == v.get("text"):
+                out[int(k)] = v["to"]
+        except (TypeError, ValueError):
+            continue
+    return out
 
 
 def _with_fixed(decided: dict[int, str | None] | None, proj: Project) -> dict[int, str | None] | None:

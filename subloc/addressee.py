@@ -174,7 +174,7 @@ def decide(
             try:
                 got = _parse(client.chat(model, msgs, json_schema=schema_for(lines, choices), temperature=0.2,
                                          reasoning="none"), lines, choices)  # fmt: skip
-            except Exception as e:  # the translation pass still decides these itself
+            except Exception as e:  # the translation pass still decides these itself (also: format refused)
                 log(f"  listeners for lines {lines[0].id}-{lines[-1].id}: {type(e).__name__}: {e}")
                 continue
             if len(got) == len(lines):
