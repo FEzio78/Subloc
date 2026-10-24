@@ -164,8 +164,11 @@ def louder(x: np.ndarray, target_db: float = -20.0, max_gain_db: float = 30.0) -
 def uncovered(spans: list[tuple[float, float]], cues: list[Cue], total: float) -> list[tuple[float, float]]:
     """The parts of `spans` (seconds) with no line on them, joined into pieces Whisper can hear in one go."""
     covered = np.zeros(int(total * 10) + 2, bool)  # 0.1 s steps
+    # By the words' own times where Whisper gave them: its segments often stretch over pauses (on a film, checking
+    # segments found 66 quiet lines, checking words 100+).
     for c in cues:
-        covered[max(0, int((c.start - RESCUE_MARGIN) * 10)) : round((c.end + RESCUE_MARGIN) * 10)] = True
+        for a, b in [(w.start, w.end) for w in c.words] or [(c.start, c.end)]:
+            covered[max(0, int((a - RESCUE_MARGIN) * 10)) : round((b + RESCUE_MARGIN) * 10)] = True
     gaps: list[tuple[float, float]] = []
     for a, b in spans:
         k, end = max(0, round(a * 10)), min(len(covered), round(b * 10))  # steps k..end-1 (0.1 s each)
