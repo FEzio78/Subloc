@@ -329,10 +329,10 @@ AR: dict[str, str] = {
     "woman": "امرأة",
     "to {who}": "إلى {who}",
     "Who is spoken to": "لمن يُوجَّه الكلام",
-    "With speakers and voices: decides who each line is said to, for the right \"you\" (man, woman, several). Reading each scene first is more accurate and takes a little longer.":
-        "مع المتحدثين وأصواتهم: يحدّد لمن يُقال كل سطر ليُترجَم «أنت» بالصيغة الصحيحة (رجل، امرأة، جمع). قراءة كل مشهد أولًا أدق وتستغرق وقتًا أطول قليلًا.",
-    "Read each scene first (recommended)": "قراءة كل مشهد أولًا (مُوصى به)",
-    "While translating (faster)": "أثناء الترجمة (أسرع)",
+    "With speakers and voices: decides who each line is said to, for the right \"you\" (man, woman, several). Reading each scene first finds a listener for more lines but is slower and, in tests so far, not more accurate.":
+        "مع المتحدثين وأصواتهم: يحدّد لمن يُقال كل سطر ليُترجَم «أنت» بالصيغة الصحيحة (رجل، امرأة، جمع). قراءة كل مشهد أولًا تجد المخاطَب في أسطر أكثر لكنها أبطأ، ولم تكن أدق في الاختبارات حتى الآن.",
+    "While translating (recommended)": "أثناء الترجمة (مُوصى به)",
+    "Read each scene first (slower, experimental)": "قراءة كل مشهد أولًا (أبطأ، تجريبي)",
     "Scenes {n}": "المشاهد {n}",
     "to group": "للمجموعة",
     "to a man": "لرجل",

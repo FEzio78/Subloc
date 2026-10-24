@@ -45,7 +45,9 @@ class Options:
     engine: Any = None  # BuiltinEngine when Subloc runs its own translator (else llm_url is used)
     prefer_builtin_subs: bool = False  # batch: per file, translate its own subtitles when it has them
     voices: bool = True  # who speaks each line + man/woman voice, when those models are installed (subloc.voices)
-    scene_pass: bool = True  # with voices: first read whole scenes to decide who each line is to (subloc.addressee)
+    # With voices: first read whole scenes to decide who each line is to (subloc.addressee). Off by default: on the
+    # scored film it chose listeners for more lines but fewer right forms (16/34 vs 20/34); synthetic scenes: equal.
+    scene_pass: bool = False
 
 
 class Reporter:

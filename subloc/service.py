@@ -50,7 +50,7 @@ class Settings:
     parallel: int = 2
     glossary: bool = True
     voices: bool = True  # speakers and voices (Settings → Speakers and voices)
-    scene_pass: bool = True  # read each scene first to find who is spoken to (Settings → Who is spoken to)
+    scene_pass: bool = False  # read each scene first to find who is spoken to (Settings → Who is spoken to)
     style: SubStyle | None = None  # None = the default look (plain .srt)
     provider: str = "server"  # "builtin" (Subloc runs llama-server) | "server" (LM Studio, Ollama…)
     server_url: str = "http://localhost:1234"
@@ -78,7 +78,7 @@ def settings() -> Settings:
         st.parallel = max(1, min(4, int(val("parallel") or 2)))
         st.glossary = (val("glossary") or "true").lower() != "false"
         st.voices = (val("voices") or "true").lower() != "false"
-        st.scene_pass = (val("scene_pass") or "true").lower() != "false"
+        st.scene_pass = (val("scene_pass") or "false").lower() == "true"
         raw = val("style")
         style = SubStyle.from_dict(json.loads(raw)) if raw else DEFAULT
         st.style = None if style == DEFAULT else style

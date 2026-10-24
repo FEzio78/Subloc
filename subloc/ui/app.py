@@ -306,7 +306,7 @@ class MainWindow(HomeMixin, LibraryMixin, QueueMixin, QMainWindow):
         select_data(self.settingsp.glossary, str(s.value("glossary", "true")).lower() != "false")
         select_data(self.settingsp.intro, "off" if str(s.value("intro", "true")).lower() == "false" else "on")
         select_data(self.settingsp.voices, str(s.value("voices", "true")).lower() != "false")
-        select_data(self.settingsp.scene_pass, str(s.value("scene_pass", "true")).lower() != "false")
+        select_data(self.settingsp.scene_pass, str(s.value("scene_pass", "false")).lower() == "true")
         self._show_voices()
         self._show_style_name()
 

@@ -915,11 +915,12 @@ class SettingsPage(QWidget):
             "(shown in the lines). Runs on this PC after listening.", vbw)  # fmt: skip
         self.scene_pass = QComboBox()
         self.scene_pass.setObjectName("boxed")
-        self.scene_pass.addItem("Read each scene first (recommended)", True)
-        self.scene_pass.addItem("While translating (faster)", False)
+        self.scene_pass.addItem("While translating (recommended)", False)
+        self.scene_pass.addItem("Read each scene first (slower, experimental)", True)
         self.scene_pass.currentIndexChanged.connect(lambda *_: self.changed.emit())
         row("Who is spoken to", "With speakers and voices: decides who each line is said to, for the right "
-            "\"you\" (man, woman, several). Reading each scene first is more accurate and takes a little longer.",
+            "\"you\" (man, woman, several). Reading each scene first finds a listener for more lines but is slower "
+            "and, in tests so far, not more accurate.",
             self.scene_pass)  # fmt: skip
         style = QPushButton("Change…")
         style.setIcon(icons.icon("palette", t.TEXT))
