@@ -23,7 +23,10 @@ All four checks must pass before committing.
 
 - `main` = the working, released app. Don't develop on it.
 - `dev` = testing phase: new work is committed here, tested in the real app, then merged into `main` when the
-  user says so (`git switch main; git merge --ff-only dev`). `dev` stays local unless the user asks to push it.
+  user says so (`git switch main; git merge --ff-only dev`). Pushed to GitHub (`origin/dev`, 2026-10-24, the
+  user asked); CI runs only on `main` and pull requests. Before pushing: noreply author, no personal paths, and
+  nothing from `vids/` (no media, subtitles, dialogue or character names) in files or commit messages.
+- `dev-backup` (local only, never push): `dev` before its history was rewritten to drop character names.
 - `private-history` is never pushed.
 
 ## Layout
@@ -59,6 +62,12 @@ All four checks must pass before committing.
 - Arabic output: MSA, standard Arabic letters only, numbers/model codes as spoken digits (Eight-Six → 86);
   feminine "you" with a visible ي, not a kasra (أنتي، لكي، يمكنكي، كنتي: the user's choice, `langs.visible_feminine`).
 - Defaults the user chose: 2 parallel translation requests (1–4 selectable); the user picks models.
+
+## Status (2026-10-24)
+
+**v0.2.0 built on `dev`, not released** (`dist\Subloc-0.2.0-setup.exe`, 159 MB): installed silently into a temp
+folder, the installed CLI ran a clip end to end (Whisper GPU, quiet-speech pass, nemo-speech speakers, names,
+Arabic), the window opened, uninstalled clean. Release notes not written yet; `main` still = v0.1.0.
 
 ## Status (2026-10-22)
 
