@@ -100,3 +100,30 @@ def test_the_scene_pass_is_saved_and_not_asked_again(monkeypatch, tmp_path):
     assert len(calls) == 1
     off = (tmp_path / "v.mp4", pipeline.Options(scene_pass=False), *args[2:])
     assert pipeline._listeners(*off) is None
+
+
+def test_a_listener_set_by_hand_is_used_and_kept(monkeypatch, tmp_path):
+    seen = []
+
+    class Fake:
+        def chat(self, model, messages, json_schema=None, temperature=0.2, reasoning="none"):
+            user = messages[-1]["content"]
+            seen.append((messages[0]["content"], user, json_schema))
+            ids = [json.loads(line)["id"] for line in user.splitlines() if line.startswith('{"id"')]
+            return json.dumps({"lines": [{"id": i, "src": "", "to": "woman", "text": "لكي"} for i in ids]})
+
+    video = tmp_path / "v.mp4"
+    video.write_bytes(b"")
+    cs = [Cue(id=1, start=0, end=2, text="For you.", translation="لك"), Cue(id=2, start=3, end=5, text="Ok.")]
+    Project(video=str(video), cues=cs, target_language="ar").save(pipeline.project_path(video))
+    monkeypatch.setattr(pipeline, "_client", lambda opt: Fake())
+    monkeypatch.setattr(pipeline, "write_outputs", lambda *a: [])
+    opt = pipeline.Options(llm_model="m", auto_glossary=False)
+    proj = pipeline.retranslate_lines(video, [1], opt, listener="woman")
+    system, user, schema = seen[-1]
+    assert '"to": "woman", "to_voice": "woman"' in user and "set by the user" in system  # no voices needed
+    assert schema["properties"]["lines"]["prefixItems"][0]["properties"]["to"]["enum"] == ["woman"]
+    assert proj.cues[0].translation == "لكي" and proj.cues[0].to == "woman"
+    assert pipeline.fixed_listeners(Project.load(pipeline.project_path(video))) == {1: "woman"}
+    proj.cues[0].text = "Something else."  # the line changed: the old choice no longer applies
+    assert pipeline.fixed_listeners(proj) == {}

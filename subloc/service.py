@@ -451,14 +451,14 @@ def _after(job: Job, videos: list[Path], target: str) -> None:
                   "target": target}  # fmt: skip
 
 
-def submit_retranslate(jobs: Jobs, video: Path, line_ids: list[int], st: Settings) -> Job:
+def submit_retranslate(jobs: Jobs, video: Path, line_ids: list[int], st: Settings, listener: str | None = None) -> Job:
     video = video.resolve()
 
     def work(job: Job) -> None:
         opt = make_options(st)
         try:
             job.stage = "translating"
-            proj = retranslate_lines(video, line_ids, opt)
+            proj = retranslate_lines(video, line_ids, opt, listener=listener)
         finally:
             if opt.engine is not None:
                 opt.engine.stop()

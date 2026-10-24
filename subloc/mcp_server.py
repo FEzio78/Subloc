@@ -132,8 +132,16 @@ class Server:
             ),
             "retranslate_lines": (
                 "Translate some lines again (with their neighbours as context and the folder's "
-                "name list). Returns a job_id; the new lines are in its result.",
-                _obj({"path": PATH, "line_ids": {"type": "array", "items": INT, "minItems": 1}}, ["path", "line_ids"]),
+                "name list). Returns a job_id; the new lines are in its result. Optional listener: who these "
+                "lines are spoken to (man, woman, several), to fix the form of 'you'; it is kept for later.",
+                _obj(
+                    {
+                        "path": PATH,
+                        "line_ids": {"type": "array", "items": INT, "minItems": 1},
+                        "listener": {"type": "string", "enum": ["man", "woman", "several"]},
+                    },
+                    ["path", "line_ids"],
+                ),
                 WRITE,
                 self.retranslate_lines,
             ),
@@ -279,7 +287,8 @@ class Server:
 
     def retranslate_lines(self, args: dict) -> dict:
         ids = [int(i) for i in args.get("line_ids") or []]
-        job = service.submit_retranslate(self.jobs, self._path(args), ids, self.get_settings())
+        listener = str(args["listener"]) if args.get("listener") else None
+        job = service.submit_retranslate(self.jobs, self._path(args), ids, self.get_settings(), listener)
         return {"job_id": job.id, "note": "Started. The new lines will be in job_status's result."}
 
     def burn_subtitles(self, args: dict) -> dict:

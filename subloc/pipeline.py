@@ -309,7 +309,7 @@ def _translate_and_write(video, opt, proj, save, rep, cancel, outputs):
         except OSError as e:  # read-only folder: still use it for this run
             rep.log(f"  couldn't save {gpath.name}: {e}")
 
-    listeners = _listeners(video, opt, proj, save, rep, cancel, client, model, tr_key, workers)
+    listeners = _with_fixed(_listeners(video, opt, proj, save, rep, cancel, client, model, tr_key, workers), proj)
     check()
     rep.log(f"Translating {proj.language} → {opt.target} with {model}…")
     rep.stage("translate", 0, model)
@@ -348,6 +348,21 @@ def _translate_and_write(video, opt, proj, save, rep, cancel, outputs):
         rep.log(f"Wrote {path.name}")
     rep.stage("done", 1)
     return proj, outputs
+
+
+FIXED = "listeners_fixed"  # project meta: listeners the user chose by hand, {cue id: {"to", "text"}}
+LISTENER_CHOICES = ("man", "woman", "several")
+
+
+def fixed_listeners(proj: Project) -> dict[int, str | None]:
+    """The listeners set by hand that still belong to their line (its text unchanged since)."""
+    text = {c.id: c.text for c in proj.cues}
+    return {int(k): v["to"] for k, v in proj.meta.get(FIXED, {}).items() if text.get(int(k)) == v.get("text")}
+
+
+def _with_fixed(decided: dict[int, str | None] | None, proj: Project) -> dict[int, str | None] | None:
+    out = {**(decided or {}), **fixed_listeners(proj)}
+    return out or None
 
 
 def _listeners(video, opt, proj, save, rep, cancel, client, model, tr_key, workers) -> dict[int, str | None] | None:
@@ -426,11 +441,19 @@ def update_line(video: Path, cue_id: int, text: str, opt: Options) -> Project:
     return proj
 
 
-def retranslate_lines(video: Path, cue_ids: list[int], opt: Options) -> Project:
+def retranslate_lines(video: Path, cue_ids: list[int], opt: Options, listener: str | None = None) -> Project:
     """Translate some lines again (e.g. after fixing a name), with their neighbours as context and the
-    name list, then rewrite the files. Lines the translator doesn't return keep their old text."""
+    name list, then rewrite the files. Lines the translator doesn't return keep their old text.
+    `listener` ("man" / "woman" / "several"): who these lines are spoken to, set by the user and kept."""
     video = video.resolve()
     proj = Project.load(project_path(video))
+    if listener is not None:
+        if listener not in LISTENER_CHOICES:
+            raise ValueError(f"listener must be one of {', '.join(LISTENER_CHOICES)}")
+        fixed = proj.meta.setdefault(FIXED, {})
+        for c in proj.cues:
+            if c.id in cue_ids:
+                fixed[str(c.id)] = {"to": listener, "text": c.text}
     target = proj.target_language or opt.target
     wanted = set(cue_ids)
     previous = {c.id: c.translation for c in proj.cues if c.id in wanted}
@@ -441,7 +464,8 @@ def retranslate_lines(video: Path, cue_ids: list[int], opt: Options) -> Project:
     model = _resolve_model(client, opt)
     glossary = Glossary.load(glossary_path(video), target) if opt.auto_glossary else None
     saved = proj.meta.get("listeners", {}).get("to") if opt.scene_pass else None
-    listeners = {int(k): v for k, v in saved.items()} if saved else None  # who each line is to, as decided before
+    decided = {int(k): v for k, v in saved.items()} if saved else None  # who each line is to, as decided before
+    listeners = _with_fixed(decided, proj)
     try:
         translate(proj.cues, client, model, proj.language, target, title=video.stem, glossary=glossary,
                   log=lambda m: None, workers=max(1, min(opt.parallel, MAX_PARALLEL)),

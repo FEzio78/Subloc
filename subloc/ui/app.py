@@ -240,6 +240,7 @@ class MainWindow(HomeMixin, LibraryMixin, QueueMixin, QMainWindow):
         d.edit_save.connect(self.save_line)
         d.edit_retranslate.connect(lambda cid: self.retranslate([cid]))
         d.edit_play.connect(self._play_from)
+        d.edit_listener.connect(lambda cid, who: self.retranslate([cid], listener=who))
         self._last_subs_write = 0.0
         self._starts: list[float] = []
         q = self.queuep
@@ -739,7 +740,7 @@ class MainWindow(HomeMixin, LibraryMixin, QueueMixin, QMainWindow):
         if c:
             self._set_now(c)
 
-    def retranslate(self, ids: list[int]) -> None:
+    def retranslate(self, ids: list[int], listener: str | None = None) -> None:
         if self.video is None or self.job is not None:
             return
         video, opt = self.video, self.options()
@@ -749,7 +750,7 @@ class MainWindow(HomeMixin, LibraryMixin, QueueMixin, QMainWindow):
 
         def work() -> None:
             try:
-                retranslate_lines(video, ids, opt)
+                retranslate_lines(video, ids, opt, listener=listener)
                 self.bus.line_done.emit("")
             except Exception as e:
                 self.bus.line_done.emit(str(e) or type(e).__name__)

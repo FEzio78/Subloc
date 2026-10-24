@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QFrame,
     QHBoxLayout,
+    QLabel,
     QListView,
     QPlainTextEdit,
     QPushButton,
@@ -106,7 +107,8 @@ def voice_lines(row: Row) -> list[str]:
     if row.gender in VOICE:
         out.append(tr(VOICE[row.gender]))
     if row.to:
-        out.append(tr("to group") if row.to == "several" else tr("to {who}", who=row.to))
+        own = {"several": "to group", "man": "to a man", "woman": "to a woman"}  # "to a man": set by the user
+        out.append(tr(own[row.to]) if row.to in own else tr("to {who}", who=row.to))
     return out
 
 
@@ -114,6 +116,7 @@ class LineDelegate(QStyledItemDelegate):
     edit_save = Signal(int, str)
     edit_retranslate = Signal(int)
     edit_play = Signal(int)
+    edit_listener = Signal(int, str)  # cue id, "man" | "woman" | "several": translate again for that listener
 
     def __init__(self, model: LinesModel, view: "LinesView"):
         super().__init__(view)
@@ -228,6 +231,7 @@ class LineDelegate(QStyledItemDelegate):
         ed.save.connect(lambda text, cid=row.id: self.edit_save.emit(cid, text))
         ed.retranslate.connect(lambda cid=row.id: self.edit_retranslate.emit(cid))
         ed.play.connect(lambda cid=row.id: self.edit_play.emit(cid))
+        ed.listener.connect(lambda who, cid=row.id: self.edit_listener.emit(cid, who))
         ed.cancel.connect(self.view.close_editor)
         return ed
 
@@ -242,12 +246,13 @@ class LineDelegate(QStyledItemDelegate):
 
 
 class LineEditor(QWidget):
-    EXTRA = 104  # extra row height while editing
+    EXTRA = 136  # extra row height while editing
 
     save = Signal(str)
     retranslate = Signal()
     play = Signal()
     cancel = Signal()
+    listener = Signal(str)
 
     def __init__(self, parent, row: Row, rtl: bool):
         super().__init__(parent)
@@ -281,6 +286,21 @@ class LineEditor(QWidget):
             bar.addWidget(b)
         bar.addStretch()
         lay.addLayout(bar)
+        # Wrong "you" (man / woman / several)? Say who the line is spoken to: it is translated again for them.
+        who = QHBoxLayout()
+        who.setSpacing(6)
+        lab = QLabel(tr("Spoken to:"))
+        lab.setStyleSheet(f"color: {t.MUTED};")
+        who.addWidget(lab)
+        for text, value in ((tr("a man"), "man"), (tr("a woman"), "woman"), (tr("several people"), "several")):
+            b = QPushButton(text)
+            b.setObjectName("chipAccent" if row.to == value else "chip")
+            b.setCursor(Qt.CursorShape.PointingHandCursor)
+            b.setToolTip(tr("Translate this line again as spoken to {who}", who=text))
+            b.clicked.connect(lambda _=False, v=value: self.listener.emit(v))
+            who.addWidget(b)
+        who.addStretch()
+        lay.addLayout(who)
 
     def _save(self) -> None:
         self.save.emit(self.box.toPlainText().strip())

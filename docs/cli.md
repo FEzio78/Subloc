@@ -12,6 +12,7 @@ subloc info "Episode 3.mkv"                       # tracks inside, subtitle file
 subloc lines "Episode 3.mkv"                      # read the lines: id, time, [speaker m/f], original, translation
 subloc edit "Episode 3.mkv" 42 "النص المصحح"        # correct line 42
 subloc retranslate "Episode 3.mkv" 40 41 42       # translate lines again (after fixing a name, say)
+subloc retranslate "Episode 3.mkv" 57 --to woman  # line 57 is said to a woman: feminine "you" (kept)
 subloc burn "Episode 3.mkv" --style Boxed         # a copy with the subtitles drawn in
 subloc library add "D:\Anime"                     # the app's library: add, refresh, list --missing, remove
 subloc queue add "D:\Anime\Night Market"          # hand videos to the app's queue (start it in the app)

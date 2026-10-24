@@ -71,8 +71,9 @@ VOICES_RULE = (
 
 GIVEN_RULE = (
     ' Lines may say who speaks ("speaker", e.g. "S1"), how the voice sounds ("voice": "man" or "woman", measured '
-    'from the audio) and who the line is spoken to ("to": a speaker id, or "several" for more than one person; '
-    '"to_voice": that person\'s voice), worked out from the whole scene; missing = not known. Words for the '
+    'from the audio) and who the line is spoken to ("to": a speaker id, "man" or "woman" for one person of that '
+    'gender, or "several" for more than one person; "to_voice": that person\'s voice), worked out from the whole '
+    "scene or set by the user; missing = not known. Words for the "
     'listener (you, your, commands) take the gender and number of the person in "to" (a woman: feminine '
     "forms; several people: plural), and words about the speaker (I am tired, I am sure) take the speaker's own "
     "voice. When the listener or their gender is not known, use the masculine singular."
@@ -98,7 +99,7 @@ def _system(src: str, tgt: str, tgt_code: str, title: str | None, voices: bool =
         ' Resolve pronouns, grammatical number and gender from context: if "you" addresses several people '
         "use the plural form; if it addresses one person, match that person's gender when the context shows it."
     )
-    if voices:
+    if voices or given:
         s += GIVEN_RULE if given else VOICES_RULE
     if title:
         s += f"\n\nThe video is titled: {title}"
@@ -172,10 +173,11 @@ def _user(batch: list[Cue], before: list[Cue], after: list[Cue], continues: dict
                 item["speaker"] = speaker
             if c.gender in VOICE:
                 item["voice"] = VOICE[c.gender]
-            if given is not None and (to := given.get(c.id)):
-                item["to"] = to
-                if to in who.voice and who.voice[to] in VOICE:
-                    item["to_voice"] = VOICE[who.voice[to]]  # type: ignore[index]
+        if given is not None and (to := given.get(c.id)):
+            item["to"] = to
+            heard = to if to in ("man", "woman") else VOICE.get((who.voice.get(to) if who else None) or "")
+            if heard:
+                item["to_voice"] = heard
         if c.lang and src == LANGS["mixed"]:
             item["lang"] = lang_name(c.lang)
         if c.kind in ("song", "caption"):
@@ -210,7 +212,7 @@ def _user(batch: list[Cue], before: list[Cue], after: list[Cue], continues: dict
                 if given is None
                 else 'then the line\'s "to" again in "to" ("unknown" when it has none), '
             )
-            if who is not None
+            if who is not None or given is not None
             else ""
         )
         + f'then write its translation in "text". Each translation must say what its own line says.\n'
@@ -308,7 +310,7 @@ def translate(
     who each line is spoken to, decided beforehand; without it the answer says that too."""
     src, tgt = lang_name(src_code), lang_name(tgt_code)
     who = Who.of(cues)  # speakers and voices known (subloc.voices): the answer also says who each line is to
-    given = listeners if who is not None else None
+    given = listeners or None  # also without voices: listeners the user set by hand (pipeline.retranslate_lines)
     system = _system(src, tgt, tgt_code, title, voices=who is not None, given=given is not None)
     pos = {c.id: i for i, c in enumerate(cues)}
     flags = {c.id: f for c, f in zip(cues, continuation_flags(cues), strict=True)}

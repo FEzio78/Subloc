@@ -5,7 +5,7 @@
     subloc info VIDEO                      tracks, subtitle files, progress
     subloc lines VIDEO                     the subtitle lines (id, time, original, translation)
     subloc edit VIDEO LINE_ID "text"       correct a translated line
-    subloc retranslate VIDEO LINE_ID...    translate some lines again (after fixing a name, say)
+    subloc retranslate VIDEO LINE_ID...    translate some lines again (after fixing a name; --to woman for "you")
     subloc burn VIDEO                      a copy of the video with the subtitles drawn in
     subloc folder FOLDER                   what still needs subtitles under a folder (quick)
     subloc library [list|add|remove|refresh|watch]
@@ -91,6 +91,12 @@ def _parser() -> argparse.ArgumentParser:
     c = cmd("retranslate", "translate some lines again, with their neighbours and the name list")
     c.add_argument("video", type=Path)
     c.add_argument("lines", type=int, nargs="+", metavar="LINE_ID")
+    c.add_argument(
+        "--to",
+        dest="listener",
+        choices=["man", "woman", "several"],
+        help="who these lines are spoken to (fixes he/she/plural 'you'; kept for later)",
+    )
     c.add_argument("--no-wait", action="store_true")
     c = cmd("burn", "make a copy of the video with the subtitles drawn in (plays everywhere)")
     c.add_argument("video", type=Path)
@@ -298,7 +304,7 @@ def cmd_retranslate(a: argparse.Namespace) -> int:
     if (code := _busy_exit(a)) is not None:
         return code
     jobs = _jobs(a)
-    job = _run_job(a, jobs, service.submit_retranslate(jobs, a.video, a.lines, _settings(a)))
+    job = _run_job(a, jobs, service.submit_retranslate(jobs, a.video, a.lines, _settings(a), a.listener))
     if not a.json and job.status == "done":
         for line in job.result["lines"]:
             _say(a, f"{line['id']:>5}  {line['translation']}")
