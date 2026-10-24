@@ -93,8 +93,8 @@ def test_the_scene_pass_is_saved_and_not_asked_again(monkeypatch, tmp_path):
         return {1: "S2", 3: "S2"}
 
     monkeypatch.setattr(addressee, "decide", decide)
-    args = (tmp_path / "v.mp4", pipeline.Options(scene_pass=True), proj, lambda: None, pipeline.Reporter(), threading.Event(),
-            None, "m", {"target": "ar", "model": "m"}, 1)  # fmt: skip
+    args = (tmp_path / "v.mp4", pipeline.Options(scene_pass=True), proj, lambda: None, pipeline.Reporter(),
+            threading.Event(), None, "m", {"target": "ar", "model": "m"}, 1)  # fmt: skip
     assert pipeline._listeners(*args) == {1: "S2", 3: "S2"}
     assert pipeline._listeners(*args) == {1: "S2", 3: "S2"}
     assert len(calls) == 1
