@@ -1,6 +1,6 @@
 [project]
 name = "subloc"
-version = "0.1.0"
+version = "0.2.0"
 description = "Subtitles for any video, made on your own PC: transcribe, translate, style, burn in."
 readme = "README.md"
 license = "GPL-3.0-or-later"

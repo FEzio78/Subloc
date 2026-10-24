@@ -31,8 +31,15 @@ def version() -> str:
         from importlib.metadata import version as installed
 
         return installed("subloc")
-    except Exception:
-        return "0.1.0"
+    except Exception:  # not installed as a package: the source tree's pyproject.toml says it
+        import tomllib
+
+        from . import ROOT
+
+        try:
+            return str(tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"])
+        except (OSError, ValueError, KeyError):
+            return "unknown"
 
 
 SPEECH_QUALITY = {"best": "large-v3", "balanced": "medium", "light": "small"}

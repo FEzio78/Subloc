@@ -9,7 +9,7 @@ import sys
 import tomllib
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_data_files
+from PyInstaller.utils.hooks import collect_data_files, copy_metadata
 from PyInstaller.utils.win32.versioninfo import (
     FixedFileInfo, StringFileInfo, StringStruct, StringTable, VarFileInfo, VarStruct, VSVersionInfo,
 )
@@ -41,6 +41,7 @@ def version_info(description: str, filename: str) -> VSVersionInfo:
 
 datas = [(str(ROOT / "subloc" / "assets"), "subloc/assets")]
 datas += collect_data_files("faster_whisper")  # its voice-detection model (silero_vad_*.onnx)
+datas += copy_metadata("subloc")  # its version, shown in About and by --version
 for part in ("mpv", "ffmpeg", "llama/vulkan", "nemo-speech"):
     if not (ROOT / "vendor" / part).exists():
         raise SystemExit(f"vendor/{part} is missing: run tools/fetch_vendor.py first")
