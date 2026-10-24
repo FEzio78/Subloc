@@ -6,9 +6,13 @@
 2. Saved as `subloc.glossary.json` in the video's folder, so the next episode reuses it.
    Entries the user edits there always win.
 3. relevant(): only the entries that appear in a batch go into that batch's prompt.
+4. People get a gender when it is clear: from the text (titles, well-known names: the name pass) or, more
+   reliably, from voices: a name said to someone ("Meryem, come here") votes for that listener's voice
+   (learn_genders). So the next lines and episodes know Meryem is a woman even where the audio can't tell.
 """
 
 import json
+import re
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
@@ -35,8 +39,9 @@ SCHEMA = {
                     "variants": {"type": "array", "items": {"type": "string"}},
                     "target": {"type": "string"},
                     "type": {"type": "string", "enum": ["person", "place", "organization", "term"]},
+                    "gender": {"type": "string", "enum": ["male", "female", "unknown"]},
                 },
-                "required": ["source", "variants", "target", "type"],
+                "required": ["source", "variants", "target", "type", "gender"],
             },
         }
     },
@@ -51,6 +56,8 @@ class Term:
     type: str = "person"
     variants: list[str] = field(default_factory=list)
     user: bool = False  # edited by the user: never overwritten
+    gender: str | None = None  # people: "male" | "female" | None (not known)
+    gender_from: str | None = None  # "name" (the text says it) | "voices" (heard: stronger) | "user"
 
     def forms(self) -> list[str]:
         return [f for f in [self.source, *self.variants] if f]
@@ -66,6 +73,31 @@ class Glossary:
     def find(self, form: str) -> Term | None:
         f = form.strip().lower()
         return next((t for t in self.terms if f in (x.lower() for x in t.forms())), None)
+
+    def gender_of(self, form: str) -> str | None:
+        t = self.find(form)
+        return t.gender if t is not None and t.type == "person" else None
+
+    def learn_genders(self, cues: list[Cue], voice: dict[str, str | None]) -> int:
+        """Give people the gender of the voice their name is said to. A line that calls someone by name (at its
+        start before a comma, or at its end after one) counts for its listener (cue.to) when that listener's voice
+        is known; 2+ such lines, 80% agreeing, decide. Never changes what the user set. Returns how many changed."""
+        changed = 0
+        for t in self.terms:
+            if t.type != "person" or t.user or t.gender_from == "user":
+                continue
+            votes: list[str] = []
+            for c in cues:
+                g = voice.get(c.to or "")
+                if g and any(_calls(c.text, f) for f in t.forms() if len(f) >= 2):
+                    votes.append(g)
+            if len(votes) < 2:
+                continue
+            top = max(("male", "female"), key=votes.count)
+            if votes.count(top) >= 0.8 * len(votes) and (t.gender, t.gender_from) != (top, "voices"):
+                t.gender, t.gender_from = top, "voices"
+                changed += 1
+        return changed
 
     def relevant(self, text: str) -> dict[str, str]:
         """Entries whose source or a variant appears in `text` (substring match, so inflected forms
@@ -86,6 +118,8 @@ class Glossary:
         if hit is None:
             self.terms.append(new)
             return
+        if new.gender and not hit.gender and not hit.user:  # a gender learnt since fills a gap, never overwrites
+            hit.gender, hit.gender_from = new.gender, new.gender_from
         for v in new.forms():
             if v.lower() not in (f.lower() for f in hit.forms()):
                 hit.variants.append(v)
@@ -121,6 +155,12 @@ class Glossary:
         return cls(target_lang, terms)
 
 
+def _calls(text: str, name: str) -> bool:
+    """Is `name` used to call someone in this line ("Meryem, come here", "Where are you, Meryem?")?"""
+    n = re.escape(name)
+    return bool(re.search(rf"^\W*{n}\W*[,،!?؟]", text, re.I) or re.search(rf"[,،]\s*{n}\W*$", text, re.I))
+
+
 def folder_path(video: Path) -> Path:
     return video.parent / FILE_NAME
 
@@ -139,6 +179,8 @@ def _prompt(lines: list[str], src: str, tgt: str, known: Glossary, style: str = 
         f"name that sounds alike (e.g. 平氏 'the Taira clan' heard instead of 兵士 'soldiers', エース "
         f"instead of 兵士): if a 'name' only makes sense as a misheard ordinary word in its context, leave it "
         f"out. Only list terms you are confident are real names or terms. "
+        f"For people, 'gender' is male or female only when the text makes it clear (a title such as Mr./Mrs., "
+        f"Bey/Hanım, oppa/unni, or a name that is clearly a man's or a woman's name); otherwise unknown. "
         f"Return an empty list if there are none."
     )
     if style:
@@ -182,6 +224,10 @@ def extract(
                     fixed_name(t["source"]) or clean_output(t["target"].strip(), tgt_code),
                     t.get("type", "term"),
                     [v.strip() for v in t.get("variants", []) if v.strip()],
+                    gender=t.get("gender")
+                    if t.get("gender") in ("male", "female") and t.get("type") == "person"
+                    else None,
+                    gender_from="name" if t.get("gender") in ("male", "female") else None,
                 )
                 for t in json.loads(raw)["terms"]
                 if t.get("source", "").strip() and t.get("target", "").strip()

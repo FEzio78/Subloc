@@ -327,7 +327,10 @@ def translate(
             # Only the names that occur here (glossary may be large; keeps prompts small and focused).
             names = glossary.relevant(" ".join(c.text for c in [*before, *batch, *after]))
             if names:
-                rules = "\n".join(f'- "{k}" → "{v}"' for k, v in names.items())
+                rules = "\n".join(
+                    f'- "{k}" → "{v}"' + (f" ({VOICE[g]})" if (g := glossary.gender_of(k)) in VOICE else "")
+                    for k, v in names.items()
+                )
                 user = (
                     f"Names and terms — use these spellings whenever the word is that name or term:\n{rules}\n"
                     f"The text comes from speech recognition: if a listed term clearly makes no sense as a "

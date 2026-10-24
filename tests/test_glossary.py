@@ -61,3 +61,36 @@ def test_codes_and_digit_word_names_are_never_transliterated():
     assert fixed_name("No. 2 driver") is None  # a phrase with a number is still translated
     assert fixed_name("Takumi") is None
     assert fixed_name("One") is None  # a single word isn't treated as a number name
+
+
+def test_a_name_said_to_a_known_voice_gives_that_person_a_gender():
+    from subloc.glossary import Glossary, Term, _calls
+    from subloc.models import Cue
+
+    assert _calls("Meryem, gel buraya!", "Meryem") and _calls("Neredesin, Meryem?", "Meryem")
+    assert not _calls("Meryem eve gitti.", "Meryem")  # talking about her, not to her
+    g = Glossary("ar", [Term("Meryem", "مريم"), Term("Kemal", "كمال", gender="female", gender_from="user"),
+                        Term("Ankara", "أنقرة", type="place")])  # fmt: skip
+
+    def line(i, text, to):
+        c = Cue(id=i, start=i, end=i + 1, text=text)
+        c.to = to
+        return c
+
+    cues = [line(1, "Meryem, gel!", "S2"), line(2, "Neredesin, Meryem?", "S2"), line(3, "Kemal, dur!", "S1"),
+            line(4, "Kemal, bak!", "S1"), line(5, "Ankara, güzel!", "S1")]  # fmt: skip
+    assert g.learn_genders(cues, {"S1": "male", "S2": "female"}) == 1
+    assert (g.find("Meryem").gender, g.find("Meryem").gender_from) == ("female", "voices")
+    assert g.find("Kemal").gender == "female"  # the user's choice stays
+    assert g.find("Ankara").gender is None  # places have none
+    assert g.gender_of("meryem") == "female"
+
+
+def test_one_vote_is_not_enough():
+    from subloc.glossary import Glossary, Term
+    from subloc.models import Cue
+
+    g = Glossary("ar", [Term("Meryem", "مريم")])
+    c = Cue(id=1, start=0, end=1, text="Meryem, gel!")
+    c.to = "S2"
+    assert g.learn_genders([c], {"S2": "female"}) == 0 and g.find("Meryem").gender is None

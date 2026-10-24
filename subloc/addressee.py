@@ -11,6 +11,7 @@ import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 
+from .glossary import Glossary
 from .langs import lang_name
 from .llm import LMStudio
 from .models import Cue
@@ -83,8 +84,12 @@ def _line(c: Cue, scene: int, people: dict[int, list[str]], voice: dict[str, str
 
 
 def _user(before: list[Cue], lines: list[Cue], after: list[Cue], scene: dict[int, int],
-          people: dict[int, list[str]], voice: dict[str, str | None]) -> str:  # fmt: skip
+          people: dict[int, list[str]], voice: dict[str, str | None],
+          names: dict[str, str] | None = None) -> str:  # fmt: skip
     parts = []
+    if names:  # known from the folder's name list (earlier lines and episodes)
+        parts.append("People's names and genders known so far: "
+                     + ", ".join(f"{n} ({VOICE[g]})" for n, g in names.items()))  # fmt: skip
     if before:
         parts.append("CONTEXT ONLY — lines just before, no answer needed:\n"
                      + "\n".join(_line(c, scene[c.id], people, voice) for c in before))  # fmt: skip
@@ -93,8 +98,8 @@ def _user(before: list[Cue], lines: list[Cue], after: list[Cue], scene: dict[int
                      + "\n".join(_line(c, scene[c.id], people, voice) for c in after))  # fmt: skip
     rows = []
     for n in dict.fromkeys(scene[c.id] for c in lines):
-        names = [f"{s} ({VOICE[g]})" if (g := voice.get(s)) else s for s in people.get(n, [])]
-        rows.append(f"scene {n}: " + (", ".join(names) or "nobody known"))
+        cast = [f"{s} ({VOICE[g]})" if (g := voice.get(s)) else s for s in people.get(n, [])]
+        rows.append(f"scene {n}: " + (", ".join(cast) or "nobody known"))
     parts.append("People speaking (voice from the audio):\n" + "\n".join(rows))
     parts.append('For every line below, one item with its "id" and "to", same order:\n\n'
                  + "\n".join(_line(c, scene[c.id], people, voice) for c in lines))  # fmt: skip
@@ -142,6 +147,7 @@ def decide(
     log: Callable[[str], None] = print,
     workers: int = 2,
     should_stop: Callable[[], bool] = lambda: False,
+    glossary: Glossary | None = None,
 ) -> dict[int, str | None]:
     """cue id → who it is spoken to ("S2", "several", None = nobody in particular / not known). Lines whose request
     fails are left out: translation then decides their listener itself, as without this pass."""
@@ -156,8 +162,13 @@ def decide(
         if should_stop():
             return
         choices = {c.id: listener_choices(c, people.get(scene[c.id], []), voice) for c in lines}
+        names = {}
+        if glossary is not None:
+            for form in glossary.relevant(" ".join(c.text for c in [*before, *lines, *after])):
+                if (g := glossary.gender_of(form)) in VOICE:
+                    names[form] = g
         msgs = [{"role": "system", "content": system},
-                {"role": "user", "content": _user(before, lines, after, scene, people, voice)}]  # fmt: skip
+                {"role": "user", "content": _user(before, lines, after, scene, people, voice, names)}]  # fmt: skip
         got: dict[int, str | None] = {}
         for _attempt in range(2):
             try:

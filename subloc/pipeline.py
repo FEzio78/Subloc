@@ -309,7 +309,8 @@ def _translate_and_write(video, opt, proj, save, rep, cancel, outputs):
         except OSError as e:  # read-only folder: still use it for this run
             rep.log(f"  couldn't save {gpath.name}: {e}")
 
-    listeners = _with_fixed(_listeners(video, opt, proj, save, rep, cancel, client, model, tr_key, workers), proj)
+    decided = _listeners(video, opt, proj, save, rep, cancel, client, model, tr_key, workers, glossary)
+    listeners = _with_fixed(decided, proj)
     check()
     rep.log(f"Translating {proj.language} → {opt.target} with {model}…")
     rep.stage("translate", 0, model)
@@ -340,6 +341,7 @@ def _translate_and_write(video, opt, proj, save, rep, cancel, outputs):
     )
     save()
     check()
+    _learn_genders(proj, glossary, video, rep)
     missing = sum(1 for c in proj.cues if not c.translation)
     rep.log(f"  done in {time.time() - t0:.0f}s" + (f" ({missing} lines failed)" if missing else ""))
 
@@ -348,6 +350,21 @@ def _translate_and_write(video, opt, proj, save, rep, cancel, outputs):
         rep.log(f"Wrote {path.name}")
     rep.stage("done", 1)
     return proj, outputs
+
+
+def _learn_genders(proj: Project, glossary: Glossary | None, video: Path, rep: Reporter) -> None:
+    """Names said to someone whose voice is known: remember that person's gender in the folder's name list."""
+    from .voices import has_voices, speaker_genders
+
+    if glossary is None or not has_voices(proj.cues):
+        return
+    n = glossary.learn_genders(proj.cues, speaker_genders(proj.cues))
+    if n:
+        try:
+            glossary.save(glossary_path(video))
+            rep.log(f"  learnt from voices: {n} name(s) with a gender, kept in {glossary_path(video).name}")
+        except OSError as e:
+            rep.log(f"  couldn't save {glossary_path(video).name}: {e}")
 
 
 FIXED = "listeners_fixed"  # project meta: listeners the user chose by hand, {cue id: {"to", "text"}}
@@ -365,7 +382,8 @@ def _with_fixed(decided: dict[int, str | None] | None, proj: Project) -> dict[in
     return out or None
 
 
-def _listeners(video, opt, proj, save, rep, cancel, client, model, tr_key, workers) -> dict[int, str | None] | None:
+def _listeners(video, opt, proj, save, rep, cancel, client, model, tr_key, workers,
+               glossary=None) -> dict[int, str | None] | None:  # fmt: skip
     """Who each line is spoken to, read from whole scenes before translating (subloc.addressee), saved with the
     project so a stopped job doesn't ask again. None (translation then decides it per batch) without voices,
     with the option off, or when nothing came back."""
@@ -385,7 +403,7 @@ def _listeners(video, opt, proj, save, rep, cancel, client, model, tr_key, worke
     found = addressee.decide(
         proj.cues, client, model, proj.language, who.scene, who.people, who.voice, title=video.stem,
         on_progress=lambda d, n: rep.stage("listeners", d / max(n, 1), f"{d}/{n} lines"),
-        log=rep.log, workers=workers, should_stop=cancel.is_set,
+        log=rep.log, workers=workers, should_stop=cancel.is_set, glossary=glossary,
     )  # fmt: skip
     if cancel.is_set():
         raise Cancelled()
