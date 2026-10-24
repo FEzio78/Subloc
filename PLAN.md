@@ -194,7 +194,22 @@ in the glossary; (d) one-click fix; (e) deep-context mode.
   10/22, after 19–21/22, messy 19–20/22 (17–19 with the general schema). Remaining misses: the right `to` but
   a masculine verb now and then; E4B names the one speaking player when a coach talks to his team.
 - Real clip (Turkish couple → ar): the man's lines go to the woman (48/63), e.g. هل أنت مستعد؟ → هل أنتِ مستعدة؟.
-- Not done: scoring against official Arabic subtitles (no such test video yet); shot changes as scene cuts.
+- Real series (Turkish, 2 episodes of 20 min, tr -> ar, without -> with voices): lines to a woman with a
+  feminine "you" 2 -> 10 (of 66) and 3 -> 9 (of 82); wrong feminine on lines to men 11 -> 9, 7 -> 6.
+- **Scored on a film** (English, 96 min, official Arabic subtitles, 209 "you" lines matched by time; forms read
+  without diacritics, so only visible feminine/plural counts): feminine where the official is feminine
+  19 -> 20 of 34, plural 3 -> 4 of 10, feminine where the official isn't 42 -> 29. When our listener is a
+  woman the form is right (12/15); the misses are lines whose listener came out a man or unknown ( is
+  empty on 30% of the film's lines vs 16% in the series): many minor characters (a shop counter), and Whisper
+  run-on lines that hold two speakers (182 lines start lowercase). Next for this: voice fingerprints so a
+  character keeps one id through a film (ECAPA embeddings), then the deep-context pass (e).
+- Found on the film and fixed: Nemotron follows at most 8 speakers at a time, so later characters were not
+  heard at all (114 of 660 lines). Long audio now goes in 10-minute windows with 60 s overlap, linked by who
+  talks together in the overlap: 11 such lines left, 61 s instead of 197 s for the step. Side effect: a
+  character who returns later gets a new id (44 ids on the film).
+- Arabic feminine "you" is written with a visible ي (أنتي، لكي، يمكنكي، كنتي; the user's choice: a kasra is easy
+  to miss on screen), .
+- Not done: shot changes as scene cuts.
 
 ## 3. Data model
 
