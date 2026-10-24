@@ -103,7 +103,8 @@ PATH from its first runtime hook (`installer/rth_system_path.py`): other program
    fewer wrong feminine forms, the film's listener choice is the weak part). Long audio is diarized in
    10-min windows, ids joined by voice fingerprints (CAM++); names learn their gender; Lines editor "Spoken
    to" fix; scene-first listener pass is an option, not the default (worse on the film). Next: the user tests
-   it all in the app; then merge `dev` into `main` when they say so. Ideas: shot changes as scene cuts, the
+   it all in the app; then merge `dev` into `main` when they say so. Also on `dev`: quiet/whispered speech the
+   VAD skipped is listened to again (PLAN.md 2.8; film: 621 -> 680 of 713 official lines covered). Ideas: shot changes as scene cuts, the
    listener choice in crowded scenes (the film's weak part).
 2. Code signing (SmartScreen warns on the unsigned installer); a test on a clean PC (no Python, no Subloc).
 3. Later: one running copy at a time (a second launch hands its files to the first), reading burned-in subtitles

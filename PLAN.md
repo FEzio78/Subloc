@@ -238,6 +238,22 @@ in the glossary; (d) one-click fix; (e) deep-context mode.
 - **Film score now** (official Arabic, 209 "you" lines): without voices feminine 19/34, plural 3/10, wrong
   feminine 42; with voices 20/34, 5/10, 22; scene first 16/34, 4/10, 26.
 
+### 2.8 Quiet speech the first pass skipped (found by the user, fixed 2026-10-24 on `dev`)
+
+**Problem.** Silero VAD (inside faster-whisper, threshold 0.5) decides what Whisper hears. Whispered or quiet
+lines score under it and are never transcribed. The user's example, a whisper at 9:24 of a Turkish episode: VAD
+max 0.52, mean 0.18; the speaker model hears it clearly; Whisper without the VAD transcribes it fine.
+**How much** (speech heard by the speaker model with no line, stretches >= 0.8 s): Turkish 20 (29 s) and 15
+(14 s), Hindi 43 (64 s), Conan 9 (10 s), the 96-min film 118 (227 s; its dialogue mix is at -45 dBFS) — on the
+film 117 of the 118 fall where the official subtitles have a line. The rest elsewhere is mostly laughs, sounds.
+**Fix** (`asr.rescue`): after the first pass, with Whisper still loaded, the speaker model's turns (else Silero at
+0.2 on level-normalised audio) show where speech has no line (by the words' own times: Whisper's segments stretch
+over pauses); Whisper hears those pieces again, made louder (to -20 dBFS, at most +30 dB), with stricter checks
+(no_speech <= 0.5, logprob >= -0.8, junk filter). The voices step reuses the turns. Transcripts saved before
+listen again (asr key v3). **Measured:** film — official lines with a line of ours 621 -> 680 of 713, 195 quiet
+lines, new lines with no official subtitle there 2 (both real speech), near-repeats 3 -> 5; Turkish ep. 1 +12
+lines (missed 29 s -> 15 s, the 9:24 whisper included), ep. 2 +4 (14 s -> 12 s).
+
 ## 3. Data model
 
 ```python
