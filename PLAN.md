@@ -199,7 +199,7 @@ in the glossary; (d) one-click fix; (e) deep-context mode.
 - **Scored on a film** (English, 96 min, official Arabic subtitles, 209 "you" lines matched by time; forms read
   without diacritics, so only visible feminine/plural counts): feminine where the official is feminine
   19 -> 20 of 34, plural 3 -> 4 of 10, feminine where the official isn't 42 -> 29. When our listener is a
-  woman the form is right (12/15); the misses are lines whose listener came out a man or unknown ( is
+  woman the form is right (12/15); the misses are lines whose listener came out a man or unknown (`to` is
   empty on 30% of the film's lines vs 16% in the series): many minor characters (a shop counter), and Whisper
   run-on lines that hold two speakers (182 lines start lowercase). Next for this: voice fingerprints so a
   character keeps one id through a film (ECAPA embeddings), then the deep-context pass (e).
@@ -208,7 +208,7 @@ in the glossary; (d) one-click fix; (e) deep-context mode.
   talks together in the overlap: 11 such lines left, 61 s instead of 197 s for the step. Side effect: a
   character who returns later gets a new id (44 ids on the film).
 - Arabic feminine "you" is written with a visible ي (أنتي، لكي، يمكنكي، كنتي; the user's choice: a kasra is easy
-  to miss on screen), .
+  to miss on screen), `langs.visible_feminine`.
 - Not done: shot changes as scene cuts.
 
 ## 3. Data model
