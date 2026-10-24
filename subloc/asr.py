@@ -138,6 +138,104 @@ def unload_model() -> None:
     gc.collect()
 
 
+# ---------------------------------------------------------------- quiet speech the first pass missed
+# Silero VAD (inside faster-whisper) decides what Whisper hears. Whispered or quiet lines score under its 0.5
+# threshold and are never transcribed: on a 96-min film with a quiet mix, 118 stretches the speaker model heard had
+# no subtitle, 117 of them where the official subtitles have a line. The rescue pass listens again, louder, only
+# where speech was heard (the speaker model's turns; else a more sensitive VAD) but no line exists. Film: 109 lines
+# found, 107 of them where the official file has a subtitle; a Turkish episode: 11 (9:24 whisper included).
+
+RESCUE_MIN = 0.5  # seconds of uncovered speech worth a look
+RESCUE_MARGIN = 0.3  # seconds around existing lines counted as covered
+RESCUE_JOIN = 1.0  # gaps closer than this are heard together (more context for Whisper)
+RESCUE_MAX = 20.0  # seconds per piece
+RESCUE_NO_SPEECH = 0.5  # stricter than the first pass (0.6 with low logprob): these places are quiet
+RESCUE_LOGPROB = -0.8
+RESCUE_VAD = 0.2  # sensitive Silero threshold, used when the speaker model isn't installed
+
+
+def louder(x: np.ndarray, target_db: float = -20.0, max_gain_db: float = 30.0) -> np.ndarray:
+    """Bring a quiet piece to normal speech loudness (at most +30 dB), clipped to the valid range."""
+    rms = float(np.sqrt(np.mean(x**2))) + 1e-9
+    gain = min(10 ** ((target_db - 20 * np.log10(rms)) / 20), 10 ** (max_gain_db / 20))
+    return np.clip(x * gain, -1.0, 1.0).astype(np.float32)
+
+
+def uncovered(spans: list[tuple[float, float]], cues: list[Cue], total: float) -> list[tuple[float, float]]:
+    """The parts of `spans` (seconds) with no line on them, joined into pieces Whisper can hear in one go."""
+    covered = np.zeros(int(total * 10) + 2, bool)  # 0.1 s steps
+    for c in cues:
+        covered[max(0, int((c.start - RESCUE_MARGIN) * 10)) : round((c.end + RESCUE_MARGIN) * 10)] = True
+    gaps: list[tuple[float, float]] = []
+    for a, b in spans:
+        k, end = max(0, round(a * 10)), min(len(covered), round(b * 10))  # steps k..end-1 (0.1 s each)
+        while k < end:
+            if covered[k]:
+                k += 1
+                continue
+            j = k
+            while j < end and not covered[j]:
+                j += 1
+            if (j - k) / 10 >= RESCUE_MIN:
+                gaps.append((k / 10, j / 10))
+            k = j
+    joined: list[list[float]] = []
+    for a, b in sorted(gaps):
+        if joined and a - joined[-1][1] < RESCUE_JOIN and b - joined[-1][0] <= RESCUE_MAX:
+            joined[-1][1] = max(joined[-1][1], b)
+        else:
+            joined.append([a, b])
+    return [(a, b) for a, b in joined]
+
+
+def sensitive_speech(audio: np.ndarray) -> list[tuple[float, float]]:
+    """Speech spans from Silero at a low threshold, on audio brought to speech loudness every 3 s."""
+    from faster_whisper.vad import VadOptions, get_speech_timestamps
+
+    n = 3 * SAMPLE_RATE
+    level = np.concatenate([louder(audio[i : i + n]) for i in range(0, len(audio), n)]) if len(audio) else audio
+    spans = get_speech_timestamps(level, VadOptions(threshold=RESCUE_VAD, min_silence_duration_ms=300,
+                                                    speech_pad_ms=200))  # fmt: skip
+    return [(s["start"] / SAMPLE_RATE, s["end"] / SAMPLE_RATE) for s in spans]
+
+
+def rescue(
+    audio: np.ndarray,
+    cues: list[Cue],
+    language: str | None,
+    model_name: str = "large-v3",
+    speech: list[tuple[float, float]] | None = None,
+    should_stop: Callable[[], bool] = lambda: False,
+) -> list[Cue]:
+    """New lines for speech that has none: Whisper on each uncovered piece of `speech` (default: a sensitive
+    VAD), made louder, with stricter checks than the first pass. `language` "mixed": detected per piece."""
+    total = len(audio) / SAMPLE_RATE
+    pieces = uncovered(speech if speech is not None else sensitive_speech(audio), cues, total)
+    if not pieces:
+        return []
+    model = load_model(model_name)
+    found: list[Cue] = []
+    for a, b in pieces:
+        if should_stop():
+            break
+        a0, b0 = max(0.0, a - RESCUE_MARGIN), min(total, b + RESCUE_MARGIN)
+        x = louder(audio[int(a0 * SAMPLE_RATE) : int(b0 * SAMPLE_RATE)])
+        lang = language
+        if language == "mixed" or not language:
+            lang, _, _ = model.detect_language(x)
+        segments, _ = model.transcribe(x, language=lang, word_timestamps=True, vad_filter=False,
+                                       condition_on_previous_text=False)  # fmt: skip
+        for seg in segments:
+            text = seg.text.strip()
+            if _is_junk(text) or seg.no_speech_prob > RESCUE_NO_SPEECH or seg.avg_logprob < RESCUE_LOGPROB:
+                continue
+            words = [Word(w.start + a0, w.end + a0, w.word, w.probability) for w in (seg.words or [])]
+            found.append(Cue(id=0, start=seg.start + a0, end=min(seg.end + a0, total), text=text, source="asr",
+                             words=words, confidence=float(np.exp(seg.avg_logprob)),
+                             lang=lang if language == "mixed" else language))  # fmt: skip
+    return found
+
+
 def _speech_chunks(audio: np.ndarray, max_gap: float = 0.3, max_len: float = 20.0) -> list[tuple[int, int]]:
     from faster_whisper.vad import VadOptions, get_speech_timestamps
 

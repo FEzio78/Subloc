@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from .asr import transcribe, unload_model
+from .asr import rescue, transcribe, unload_model
 from .errors import SublocError, friendly_os_error
 from .glossary import Glossary, Term, merge_into
 from .glossary import extract as extract_names
@@ -129,8 +129,8 @@ def run(
     # 1b. Transcribe (cached unless track/model/language changed or forced)
     audio_track = opt.audio_track if opt.audio_track is not None else default_audio_track(info)
     # "v" bumps when transcription changes in a way that makes old saved results wrong
-    # (v2: timing stays in sync on damaged files).
-    asr_key = {"model": opt.asr_model, "language": opt.source, "audio": audio_track, "v": 2, "file": file_id}
+    # (v2: timing stays in sync on damaged files; v3: quiet speech the first pass skipped is listened to again).
+    asr_key = {"model": opt.asr_model, "language": opt.source, "audio": audio_track, "v": 3, "file": file_id}
     if opt.retranscribe or not proj.asr_cues or proj.meta.get("source") != asr_key:
         if opt.engine is not None:  # free the graphics card for Whisper
             opt.engine.stop()
@@ -167,8 +167,20 @@ def run(
                 last[0] = frac
                 rep.log(f"  {frac:4.0%}  {text[:60]}")
 
+        turns = None
         try:
             proj.asr_cues, proj.language = transcribe(audio, opt.asr_model, opt.source, prog, rep.log)
+            # Who speaks when, now (Whisper is still loaded): the speech it heard guides the rescue pass, and the
+            # voices step reuses it.
+            turns = _speech_turns(opt, audio, rep, cancel)
+            check()
+            rep.stage("transcribe", 1.0, "Listening again to quiet speech…")
+            speech = [(t.start, t.end) for t in turns] if turns is not None else None
+            extra = rescue(audio, proj.asr_cues, proj.language, opt.asr_model, speech, cancel.is_set)
+            check()
+            if extra:
+                proj.asr_cues = sorted([*proj.asr_cues, *extra], key=lambda c: c.start)
+                rep.log(f"  {len(extra)} quiet line(s) found on a second listen")
         finally:
             if not opt.keep_asr_loaded:
                 unload_model()
@@ -183,7 +195,7 @@ def run(
         proj.target_language = None
         rep.log(f"  {len(proj.cues)} subtitles, language={proj.language}, {time.time() - t0:.0f}s")
         save()
-        _voices(video, opt, proj, save, rep, cancel, audio=audio)
+        _voices(video, opt, proj, save, rep, cancel, audio=audio, turns=turns)
     else:
         if proj.meta.get("segment_v") != SEGMENT_VERSION:
             # Line-splitting rules changed since this was saved: re-split the kept raw transcript
@@ -205,8 +217,24 @@ def run(
     return _translate_and_write(video, opt, proj, save, rep, cancel, outputs)
 
 
+def _speech_turns(opt: Options, audio, rep: Reporter, cancel: threading.Event):
+    """The speaker model's turns (subloc.voices), or None when it isn't installed, is off, or fails."""
+    from . import voices
+
+    if not opt.voices or not voices.ready():
+        return None
+    rep.stage("voices", 0, "Finding speakers…")
+    try:
+        return voices.diarize(audio, cancel.is_set, rep.log)
+    except voices.Cancelled as e:
+        raise Cancelled() from e
+    except Exception as e:  # the rescue pass falls back to a sensitive VAD; the voices step tries again
+        rep.log(f"  speakers not found ({e}); listening again with the speech detector only")
+        return None
+
+
 def _voices(video: Path, opt: Options, proj: Project, save, rep: Reporter, cancel: threading.Event,
-            audio=None, track: int = 0) -> None:  # fmt: skip
+            audio=None, track: int = 0, turns=None) -> None:  # fmt: skip
     """Step 1c: who speaks each line and whether the voice is a man's or a woman's (subloc.voices). Saved with
     the project and redone only when the lines change. Skipped when its models aren't installed; a failure here
     is a warning, never the end of the job (the subtitles don't need it)."""
@@ -223,7 +251,8 @@ def _voices(video: Path, opt: Options, proj: Project, save, rep: Reporter, cance
     try:
         if audio is None:
             audio = load_audio(video, track).samples
-        turns = voices.diarize(audio, cancel.is_set, rep.log)
+        if turns is None:
+            turns = voices.diarize(audio, cancel.is_set, rep.log)
         if cancel.is_set():
             raise Cancelled()
         speakers = voices.label(proj.cues, audio, turns, voices.GenderModel(), cancel.is_set,
