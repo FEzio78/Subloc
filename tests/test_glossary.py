@@ -67,8 +67,8 @@ def test_a_name_said_to_a_known_voice_gives_that_person_a_gender():
     from subloc.glossary import Glossary, Term, _calls
     from subloc.models import Cue
 
-    assert _calls("Meryem, gel buraya!", "Meryem") and _calls("Neredesin, Meryem?", "Meryem")
-    assert not _calls("Meryem eve gitti.", "Meryem")  # talking about her, not to her
+    assert _calls("Meryem, gel buraya!", "Meryem") and _calls("Neredesin Meryem?", "Meryem")  # no comma needed
+    assert not _calls("Dün Meryem eve gitti.", "Meryem")  # talking about her, not to her
     g = Glossary("ar", [Term("Meryem", "مريم"), Term("Kemal", "كمال", gender="female", gender_from="user"),
                         Term("Ankara", "أنقرة", type="place")])  # fmt: skip
 

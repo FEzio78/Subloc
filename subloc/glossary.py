@@ -80,8 +80,10 @@ class Glossary:
 
     def learn_genders(self, cues: list[Cue], voice: dict[str, str | None]) -> int:
         """Give people the gender of the voice their name is said to. A line that calls someone by name (at its
-        start before a comma, or at its end after one) counts for its listener (cue.to) when that listener's voice
-        is known; 2+ such lines, 80% agreeing, decide. Never changes what the user set. Returns how many changed."""
+        start or end: _calls) counts for its listener (cue.to) when that listener's voice is known; 2 lines that
+        agree, or 3+ with 80% agreeing, decide. Never changes what the user set. Returns how many changed.
+        Measured on a Turkish episode: three men's names 9/9, 3/3 and 5/6 male (as the names say), one name 2/2
+        female (the name pass couldn't tell); one woman's name had 1 vote (the wrong one): too few, left alone."""
         changed = 0
         for t in self.terms:
             if t.type != "person" or t.user or t.gender_from == "user":
@@ -94,7 +96,8 @@ class Glossary:
             if len(votes) < 2:
                 continue
             top = max(("male", "female"), key=votes.count)
-            if votes.count(top) >= 0.8 * len(votes) and (t.gender, t.gender_from) != (top, "voices"):
+            agree = votes.count(top) == len(votes) if len(votes) == 2 else votes.count(top) >= 0.8 * len(votes)
+            if agree and (t.gender, t.gender_from) != (top, "voices"):
                 t.gender, t.gender_from = top, "voices"
                 changed += 1
         return changed
@@ -156,9 +159,11 @@ class Glossary:
 
 
 def _calls(text: str, name: str) -> bool:
-    """Is `name` used to call someone in this line ("Meryem, come here", "Where are you, Meryem?")?"""
-    n = re.escape(name)
-    return bool(re.search(rf"^\W*{n}\W*[,،!?؟]", text, re.I) or re.search(rf"[,،]\s*{n}\W*$", text, re.I))
+    """Is `name` likely used to call someone in this line: its first or last word ("Meryem, come here", "Where are
+    you Meryem")? Speech recognition leaves out most commas (Turkish: 13 of 469 lines had one), so position is the
+    clue. A name only talked about lands there too, but its listeners differ: learn_genders needs them to agree."""
+    words = re.findall(r"\w+", text.lower())
+    return bool(words) and name.lower() in (words[0], words[-1])
 
 
 def folder_path(video: Path) -> Path:
