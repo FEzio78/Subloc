@@ -29,7 +29,8 @@ All four checks must pass before committing.
 ## Layout
 
 - Engine: `media` (ffprobe, sync-safe audio decode, fingerprint) · `asr` (Whisper, language vote, mixed mode) ·
-  `segment` · `subparse` · `glossary` (name list per folder) · `voices` (speaker + man/woman voice per line) · `translate` (batches, enforced JSON with exact
+  `segment` · `subparse` · `glossary` (name list per folder, people's genders) · `voices` (speaker + man/woman
+  voice per line, fingerprints, scenes) · `addressee` (optional scene-first listener pass) · `translate` (batches, enforced JSON with exact
   count + id enum, `src` anchoring, retries, parallel) · `llm` (OpenAI-compatible client) · `engine`
   (built-in llama-server) · `pipeline` (one video, caching) · `batch` · `style`/`burn`/`subtitles` (outputs) ·
   `catalog`/`hardware`/`download`/`config` (setup) · `recent` (Home list) · `library` (folder index, scans) ·
@@ -100,8 +101,10 @@ PATH from its first runtime hook (`installer/rth_system_path.py`): other program
    Lines) and (b) translation with scenes, speakers, voices and a `to` field (synthetic test en→ar: Gemma 26B
    12–13 → 21–22 of 22 lines right, E4B 10 → 19–21; Turkish series and an English film with official Arabic:
    fewer wrong feminine forms, the film's listener choice is the weak part). Long audio is diarized in
-   10-min windows. Next: voice fingerprints (one id per character through a film), (c) name ↔ voice in the
-   glossary, (d) one-click fix of the listener, (e) deep-context mode.
+   10-min windows, ids joined by voice fingerprints (CAM++); names learn their gender; Lines editor "Spoken
+   to" fix; scene-first listener pass is an option, not the default (worse on the film). Next: the user tests
+   it all in the app; then merge `dev` into `main` when they say so. Ideas: shot changes as scene cuts, the
+   listener choice in crowded scenes (the film's weak part).
 2. Code signing (SmartScreen warns on the unsigned installer); a test on a clean PC (no Python, no Subloc).
 3. Later: one running copy at a time (a second launch hands its files to the first), reading burned-in subtitles
    (research notes in PLAN.md §2.2), live captions for system audio, CapCut-style animated captions, more UI

@@ -211,6 +211,33 @@ in the glossary; (d) one-click fix; (e) deep-context mode.
   to miss on screen), `langs.visible_feminine`.
 - Not done: shot changes as scene cuts.
 
+**Built 2026-10-24 (later), steps (c)-(e) and fingerprints:**
+- **Scene-first listener pass** (`addressee.py`, step e): reads whole scenes (60 lines a request) and answers only
+  `to` per line; translation then gets `to` + `to_voice` and writes `to` again before `text` (that copy took
+  E4B from 17-19 to 19-21/22). Listener choices are per line: the people of its own scene, minus its likely
+  speaker (`voices.likely_speaker`: a line whose voice contradicts its label goes to the one other person in the
+  scene with that voice); this also helped the normal path (26B 22/22 in every synthetic condition).
+  **Not the default:** on the scored film it gave a listener to many more lines (96 vs 243 without one) but
+  fewer right forms (feminine 16/34 vs 20/34; with the listener handed over, the translator wrote the feminine
+  form for a woman 11 times of 18 vs 15 of 18 when it decides itself). Settings → Who is spoken to.
+- **Arabic instruction:** feminine-only examples pushed E4B to feminine when a woman spoke to a man; now one
+  example set each for a man, a woman (with ي: أنتي، لكي، كنتي) and several.
+- **Voice fingerprints:** 3D-Speaker CAM++ (Apache-2.0, 30 MB, sherpa-onnx's ONNX; Kaldi fbank in numpy).
+  The gender model's own 192-d layer does not tell people apart (same vs other woman 0.78 vs 0.75), CAM++
+  does (93% of lines nearest their own speaker on a Turkish episode). Ids split across diarization windows are
+  merged at cosine 0.68 between group averages (Turkish calibration: 0.65 links 92% of same-person pairs and
+  5.5% of different same-sex people; 0.70 80% and 1.6%), never two ids heard in the same window, never a man
+  with a woman. Film: 44 -> 33 ids; film feminine-wrong 29 -> 22 with it.
+- **One-click fix** (step d): Lines editor "Spoken to: a man / a woman / several people" translates the line
+  again for that listener and keeps the choice (meta `listeners_fixed`, with the line's text); also without
+  voices. CLI `retranslate --to`, MCP `retranslate_lines` listener.
+- **Names and voices** (step c): the name pass gives people a gender when the text makes it clear; a name said
+  to someone ("Meryem, ...", "..., Meryem?") votes for that listener's voice, 2+ votes at 80% set it
+  (`gender_from: voices`), never over the user's. Translation shows `"Meryem" -> "مريم" (woman)`; the scene pass
+  gets the known names.
+- **Film score now** (official Arabic, 209 "you" lines): without voices feminine 19/34, plural 3/10, wrong
+  feminine 42; with voices 20/34, 5/10, 22; scene first 16/34, 4/10, 26.
+
 ## 3. Data model
 
 ```python
