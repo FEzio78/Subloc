@@ -99,8 +99,10 @@ def _system(src: str, tgt: str, tgt_code: str, title: str | None, voices: bool =
         ' Resolve pronouns, grammatical number and gender from context: if "you" addresses several people '
         "use the plural form; if it addresses one person, match that person's gender when the context shows it."
     )
-    if voices or given:
-        s += GIVEN_RULE if given else VOICES_RULE
+    if voices and not given:
+        s += VOICES_RULE
+    elif given:  # every line's listener decided beforehand (the scene pass), or no voices: only what the user set
+        s += GIVEN_RULE
     if title:
         s += f"\n\nThe video is titled: {title}"
     return s
@@ -160,7 +162,7 @@ def _tag(c: Cue, who: "Who | None") -> str:
 
 def _user(batch: list[Cue], before: list[Cue], after: list[Cue], continues: dict[int, bool], src: str, tgt: str,
           tgt_code: str | None = None, who: Who | None = None,
-          given: dict[int, str | None] | None = None) -> str:  # fmt: skip
+          given: dict[int, str | None] | None = None, all_given: bool = True) -> str:  # fmt: skip
     """`continues`: cue id → is the rest of the previous cue's sentence (see continuation_flags).
     `who`: speakers and voices; then each line says who speaks and the answer says who it is spoken to, unless
     `given` already says that (subloc.addressee: decided over whole scenes)."""
@@ -211,6 +213,8 @@ def _user(batch: list[Cue], before: list[Cue], after: list[Cue], continues: dict
                 'then who the line is spoken to in "to", '
                 if given is None
                 else 'then the line\'s "to" again in "to" ("unknown" when it has none), '
+                if all_given
+                else 'then who the line is spoken to in "to" (the line\'s own "to" again when it has one), '
             )
             if who is not None or given is not None
             else ""
@@ -311,7 +315,13 @@ def translate(
     src, tgt = lang_name(src_code), lang_name(tgt_code)
     who = Who.of(cues)  # speakers and voices known (subloc.voices): the answer also says who each line is to
     given = listeners or None  # also without voices: listeners the user set by hand (pipeline.retranslate_lines)
-    system = _system(src, tgt, tgt_code, title, voices=who is not None, given=given is not None)
+    # All lines decided beforehand (the scene pass) → the rule for given listeners. Only some (the user's own
+    # choices) → with voices the translator still decides the others, and copies the given ones.
+    all_given = given is not None and (who is None or all(c.id in given for c in cues))
+    system = _system(src, tgt, tgt_code, title, voices=who is not None, given=all_given)
+    if given is not None and not all_given:
+        system += (' Some lines already say who they are spoken to ("to", with "to_voice"), set by the user: for '
+                   'those, write that "to" again and use it.')  # fmt: skip
     pos = {c.id: i for i, c in enumerate(cues)}
     flags = {c.id: f for c, f in zip(cues, continuation_flags(cues), strict=True)}
 
@@ -322,7 +332,7 @@ def translate(
         ids = {c.id for c in batch}
         # Only mark a continuation when the cue it continues is in this same request.
         cont = {c.id: flags[c.id] and pos[c.id] > 0 and cues[pos[c.id] - 1].id in ids for c in batch}
-        user = _user(batch, before, after, cont, src, tgt, tgt_code, who, given)
+        user = _user(batch, before, after, cont, src, tgt, tgt_code, who, given, all_given)
         if glossary:
             # Only the names that occur here (glossary may be large; keeps prompts small and focused).
             names = glossary.relevant(" ".join(c.text for c in [*before, *batch, *after]))
@@ -338,21 +348,25 @@ def translate(
                 )
         msgs = [{"role": "system", "content": system}, {"role": "user", "content": user}]
         to: dict[int, list[str]] | None = None
-        if who is not None and given is None:
-            to = {c.id: who.choices(c) + TO_OTHER for c in batch}
-        elif given is not None:  # the listener decided beforehand, written again just before the translation
-            to = {c.id: [given.get(c.id) or "unknown"] for c in batch}
+        if who is not None or given is not None:
+            to = {}
+            for c in batch:
+                if given is not None and c.id in given:  # decided beforehand: written again before the translation
+                    to[c.id] = [given[c.id] or "unknown"]
+                elif who is not None and not all_given:
+                    to[c.id] = who.choices(c) + TO_OTHER
+                else:
+                    to[c.id] = ["unknown"]
         raw = client.chat(model, msgs, json_schema=schema_for(batch, to), temperature=0.3, reasoning="none")
         got = {i: clean_output(t, tgt_code) for i, t in _parse(raw, batch).items()}
-        if given is not None:
-            for c in batch:
-                if c.id in got:
-                    c.to = given.get(c.id)
-        elif who is not None:
-            targets = _targets(raw)
-            for c in batch:
-                if c.id in got:
-                    c.to = None if targets.get(c.id, "unknown") == "unknown" else targets[c.id]
+        targets = _targets(raw) if who is not None else {}
+        for c in batch:
+            if c.id not in got:
+                continue
+            if given is not None and c.id in given:
+                c.to = given[c.id]
+            elif who is not None:
+                c.to = None if targets.get(c.id, "unknown") == "unknown" else targets[c.id]
         return got
 
     def call_fitting(batch: list[Cue]) -> dict[int, str]:

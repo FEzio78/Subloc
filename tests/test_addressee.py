@@ -127,3 +127,23 @@ def test_a_listener_set_by_hand_is_used_and_kept(monkeypatch, tmp_path):
     assert pipeline.fixed_listeners(Project.load(pipeline.project_path(video))) == {1: "woman"}
     proj.cues[0].text = "Something else."  # the line changed: the old choice no longer applies
     assert pipeline.fixed_listeners(proj) == {}
+
+
+def test_a_few_listeners_set_by_hand_leave_the_others_to_the_translator():
+    """One line fixed by the user must not switch every other line to 'unknown' (it did: 5 of 481 kept a listener)."""
+    seen = {}
+
+    class Fake:
+        def chat(self, model, messages, json_schema=None, temperature=0.2, reasoning="none"):
+            items = json_schema["properties"]["lines"]["prefixItems"]
+            seen["enums"] = [i["properties"]["to"]["enum"] for i in items]
+            seen["system"] = messages[0]["content"]
+            ids = [i["properties"]["id"]["enum"][0] for i in items]
+            to = {1: "S2", 2: "S1", 3: "woman"}
+            return json.dumps({"lines": [{"id": i, "src": "", "to": to[i], "text": f"T{i}"} for i in ids]})
+
+    cs = voiced(COUPLE[:3])
+    translate(cs, Fake(), "m", "en", "ar", log=lambda m: None, workers=1, listeners={3: "woman"})
+    assert seen["enums"] == [["S2", "several", "unknown"], ["S1", "several", "unknown"], ["woman"]]
+    assert "first decide who it is spoken to" in seen["system"] and "set by the user" in seen["system"]
+    assert [c.to for c in cs] == ["S2", "S1", "woman"]
