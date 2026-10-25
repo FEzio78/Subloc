@@ -11,6 +11,7 @@
     subloc library [list|add|remove|refresh|watch]
     subloc queue [list|add|clear]          the app's queue (start it in the app)
     subloc status | models | styles
+    subloc update [--check]                a newer Subloc? download and install it (installed app only)
     subloc mcp                             MCP server for AI agents (stdin/stdout)
 
 Every command takes --json: one JSON document on stdout, progress on stderr.
@@ -27,7 +28,7 @@ from . import library, service
 from .busy import holder
 
 COMMANDS = {"translate", "transcribe", "info", "lines", "edit", "retranslate", "burn", "folder", "library", "queue",
-            "status", "models", "styles", "mcp"}  # fmt: skip
+            "status", "models", "styles", "update", "mcp"}  # fmt: skip
 BUSY = 3
 
 
@@ -118,6 +119,8 @@ def _parser() -> argparse.ArgumentParser:
     cmd("status", "settings, translator and whether Subloc is busy")
     cmd("models", "translator models available")
     cmd("styles", "subtitle style presets")
+    c = cmd("update", "is there a newer Subloc? download and install it (the installed app; from source: git)")
+    c.add_argument("--check", action="store_true", help="only say whether there is one")
     sub.add_parser("mcp", help="run as an MCP server for AI agents (on stdin/stdout)")
     return p
 
@@ -431,10 +434,76 @@ def cmd_styles(a: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_update(a: argparse.Namespace) -> int:
+    """Check GitHub for a newer release; when there is one and Subloc is installed, download its installer
+    (checked against GitHub's SHA-256) and start it. The installer then replaces this program: run subloc again
+    when it's done."""
+    from . import update
+    from .errors import SublocError
+
+    mine = service.version()
+
+    def fail(msg: str, code: int = 1, **extra: Any) -> int:
+        if a.json:
+            _emit({"error": msg, "current": mine, **extra})
+        else:
+            print(f"subloc: {msg}", file=sys.stderr)
+        return code
+
+    try:
+        rel = update.latest()
+    except SublocError as e:
+        return fail(str(e))
+    newer = rel is not None and update.is_newer(rel.version, mine)
+    report: dict[str, Any] = {"current": mine, "latest": rel.version if rel else None, "newer": newer,
+                              "page": rel.page if rel else None, "installing": False}  # fmt: skip
+    if not newer or a.check or rel is None:
+        if a.json:
+            _emit(report)
+        elif newer and rel is not None:
+            print(f"Subloc {rel.version} is available (you have {mine}): {rel.page}")
+        else:
+            print(f"You have the latest version ({mine}).")
+        return 0
+    if update.app_dir() is None:
+        report["note"] = r"Running from the source folder: update with git (git pull, then . .\env.ps1 -Setup)."
+        if a.json:
+            _emit(report)
+        else:
+            print(f"Subloc {rel.version} is available. {report['note']}")
+        return 0
+    if not rel.installable:
+        return fail(f"Subloc {rel.version} has no checked installer to download; get it from {rel.page}", **report)
+    if who := holder():
+        return fail(f"Subloc is busy ({who}). Update when it's done.", BUSY, busy=True, **report)
+    if update.other_windows():
+        return fail("Subloc's window is open: close it, then update.", BUSY, busy=True, **report)
+    _say(a, f"Downloading Subloc {rel.version} ({rel.size / 1e6:.0f} MB)…")
+    last = [-1]
+
+    def progress(done: int, total: int) -> None:
+        pct = int(done * 100 / max(total, 1)) // 10 * 10
+        if pct > last[0]:
+            last[0] = pct
+            _say(a, f"  {pct}%")
+
+    try:
+        installer = update.fetch(rel, progress)
+        update.run_installer(installer, reopen=False)
+    except SublocError as e:
+        return fail(str(e), **report)
+    report["installing"] = True
+    if a.json:
+        _emit(report)
+    else:
+        print(f"Installing Subloc {rel.version}… it takes about a minute; then run subloc again.")
+    return 0
+
+
 COMMAND_FUNCS = {"translate": cmd_translate, "transcribe": cmd_translate, "info": cmd_info, "lines": cmd_lines,
                  "edit": cmd_edit, "retranslate": cmd_retranslate, "burn": cmd_burn, "folder": cmd_folder,
                  "library": cmd_library, "queue": cmd_queue, "status": cmd_status, "models": cmd_models,
-                 "styles": cmd_styles}  # fmt: skip
+                 "styles": cmd_styles, "update": cmd_update}  # fmt: skip
 
 
 if __name__ == "__main__":

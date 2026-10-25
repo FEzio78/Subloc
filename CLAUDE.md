@@ -108,6 +108,16 @@ PATH from its first runtime hook (`installer/rth_system_path.py`): other program
 
 ## Next
 
+0. **In-app updater — done (2026-10-25), ships in 0.2.1**: `subloc/update.py` (check GitHub, download verified by
+   GitHub's SHA-256, run the installer quietly into the app folder with `/WAITPID=<pid>` and `/REOPEN=1`), app
+   (Update now, progress on the Check for updates button, refuses while anything runs or another Subloc window
+   is open, optional daily check), `subloc update [--check]`. Tested end to end in %TEMP% (local feed via
+   `SUBLOC_UPDATE_FEED`; 0.2.0 → 0.2.1 from the CLI and from the window's real code, reopened, one uninstall
+   entry). Lesson: Inno's "close running apps" step gives up (silent install aborts, rolled back) if Subloc is
+   still open ~1 s after the installer starts; the installer now waits for the PID that started it
+   (`InitializeSetup`). Testing the in-app path: the app's settings are in the registry (`HKCU\Software\Subloc`),
+   so a harness must swap `QSettings` for an INI file.
+
 1. **Speakers and who is spoken to** (released in 0.2.0; next work on `dev`): design + results in PLAN.md 2.7. Built: (a) `voices.py`
    (Nemotron via bundled nemo-speech Vulkan + one ONNX gender classifier; per-line speaker/gender, shown in
    Lines) and (b) translation with scenes, speakers, voices and a `to` field (synthetic test en→ar: Gemma 26B

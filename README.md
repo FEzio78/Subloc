@@ -122,7 +122,9 @@ Download `Subloc-<version>-setup.exe` from [Releases](https://github.com/FEzio78
 No admin rights are needed; the installer is in English and Arabic. On first launch Setup checks your PC,
 recommends models and downloads them (and NVIDIA's CUDA libraries if you have an NVIDIA card) into
 `%LOCALAPPDATA%\Subloc`. A newer installer updates an installed Subloc in place and keeps its settings and
-models. Uninstalling asks whether to keep those downloads.
+models. From 0.2.1 Subloc can do that itself: Settings → Check for updates (or `subloc-cli update`) downloads the
+new installer, checks it against the SHA-256 GitHub publishes, installs it and opens Subloc again. Uninstalling
+asks whether to keep those downloads.
 
 ## Run from source (Windows)
 
@@ -170,7 +172,8 @@ Saved next to the video, so VLC, MPV, Plex and most TVs pick the subtitles up au
 
 Everything runs on your computer, speaker and voice detection included. Videos, audio and subtitles are
 never sent anywhere. The only network traffic is downloading models during Setup (from Hugging Face and
-GitHub), checking for updates when you ask, or talking to the translator server *you* configure.
+GitHub), checking for updates when you ask (or once a day, if you turn that on) and downloading them from
+GitHub, or talking to the translator server *you* configure.
 
 ## Contributing
 

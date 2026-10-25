@@ -16,6 +16,7 @@ def run(cmd: list[str], **kw: Any) -> subprocess.CompletedProcess[Any]:
     return subprocess.run(cmd, creationflags=NO_WINDOW, **kw)
 
 
-def popen(cmd: list[str], **kw: Any) -> subprocess.Popen[Any]:
-    """subprocess.Popen, never showing a console window."""
-    return subprocess.Popen(cmd, creationflags=NO_WINDOW, **kw)
+def popen(cmd: list[str], extra_flags: int = 0, **kw: Any) -> subprocess.Popen[Any]:
+    """subprocess.Popen, never showing a console window. `extra_flags`: more creation flags (e.g. DETACHED_PROCESS
+    for the updater's installer, which must outlive Subloc)."""
+    return subprocess.Popen(cmd, creationflags=NO_WINDOW | extra_flags, **kw)

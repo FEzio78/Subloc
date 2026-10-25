@@ -91,8 +91,43 @@ Root: HKCU; Subkey: "Software\Classes\Directory\shell\Subloc\command"; ValueType
 
 [Run]
 Filename: "{app}\Subloc.exe"; Description: "{cm:LaunchProgram,Subloc}"; Flags: nowait postinstall skipifsilent
+; An update started from inside Subloc (subloc/update.py) runs quietly with /REOPEN=1: open Subloc again at the end.
+Filename: "{app}\Subloc.exe"; Flags: nowait; Check: ReopenAfterUpdate
 
 [Code]
+function OpenProcess(Access: Cardinal; Inherit: Boolean; Pid: Cardinal): THandle;
+  external 'OpenProcess@kernel32.dll stdcall';
+function WaitForSingleObject(Handle: THandle; Ms: Cardinal): Cardinal;
+  external 'WaitForSingleObject@kernel32.dll stdcall';
+function CloseHandle(Handle: THandle): Boolean;
+  external 'CloseHandle@kernel32.dll stdcall';
+
+// An update started from inside Subloc passes /WAITPID=<its process>: wait (up to a minute) until that Subloc
+// has quit, or the check for running programs finds it still open and the quiet install gives up.
+function InitializeSetup: Boolean;
+var
+  Pid: Integer;
+  Process: THandle;
+begin
+  Result := True;
+  Pid := StrToIntDef(ExpandConstant('{param:WAITPID|0}'), 0);
+  if Pid > 0 then
+  begin
+    Process := OpenProcess($00100000, False, Pid); // SYNCHRONIZE
+    if Process <> 0 then
+    begin
+      Log(Format('Waiting for Subloc (process %d) to quit.', [Pid]));
+      WaitForSingleObject(Process, 60000);
+      CloseHandle(Process);
+    end;
+  end;
+end;
+
+function ReopenAfterUpdate: Boolean;
+begin
+  Result := ExpandConstant('{param:REOPEN|0}') = '1';
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   Data: String;

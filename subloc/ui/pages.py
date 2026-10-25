@@ -939,6 +939,12 @@ class SettingsPage(QWidget):
         self.intro.addItem("Off", "off")
         self.intro.currentIndexChanged.connect(lambda *_: self.changed.emit())
         row("Opening animation", "The short logo animation when Subloc starts. A click skips it.", self.intro)
+        self.update_check = QComboBox()
+        self.update_check.setObjectName("boxed")
+        self.update_check.addItem("Only when I ask", "manual")
+        self.update_check.addItem("Once a day at start-up", "daily")
+        self.update_check.currentIndexChanged.connect(lambda *_: self.changed.emit())
+        row("Check for updates", "Asks GitHub whether a newer Subloc exists. Nothing else is sent.", self.update_check)
         form.setColumnStretch(0, 3)
         form.setColumnStretch(1, 2)
         outer.addWidget(card)
@@ -952,6 +958,11 @@ class SettingsPage(QWidget):
         self.voices_get.setVisible(state != "ready")
         self.voices_get.setEnabled(state == "missing")
         self.voices_get.setText(detail)
+
+    def show_update(self, text: str = "", busy: bool = False) -> None:
+        """The Check for updates button shows the download's progress while an update downloads."""
+        self.update_button.setText(text or tr("Check for updates"))
+        self.update_button.setEnabled(not busy)
 
     def _about(self) -> QFrame:
         card = QFrame()
@@ -990,6 +1001,8 @@ class SettingsPage(QWidget):
                 b.setToolTip(tip)
             b.clicked.connect(action)
             buttons.addWidget(b)
+            if text == "Check for updates":
+                self.update_button = b
         buttons.addStretch()
         col.addLayout(buttons)
         lay.addLayout(col, 1)

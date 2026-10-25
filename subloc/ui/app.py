@@ -6,7 +6,6 @@ import contextlib
 import ctypes
 import json
 import os
-import re
 import shutil
 import sys
 import threading
@@ -14,7 +13,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-import httpx
 from PySide6.QtCore import QFileSystemWatcher, QObject, QSettings, QStandardPaths, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (
@@ -31,7 +29,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .. import batch, library, power, proc, recent, voices
+from .. import batch, busy, library, power, proc, recent, update, voices
 from ..batch import Item, find_videos, load_queue, save_queue
 from ..burn import burn
 from ..busy import BusyLock
@@ -104,7 +102,9 @@ class Bus(QObject):
     thumb = Signal(str, float)  # video, duration (Home list thumbnail is ready)
     lib_progress = Signal(str)
     lib_scanned = Signal(object)  # library.Scan, or None when stopped
-    update = Signal(str, str)  # latest version tag ("" = none published, "error") and its page
+    update = Signal(object, str, bool)  # update.Release or None, error ("" = fine), asked by the user
+    update_progress = Signal(float)
+    update_ready = Signal(str, str)  # downloaded installer, error ("" = fine; "stopped")
     voices = Signal(float, str)  # speaker models download: fraction, error ("" = fine; fraction 1 = done)
 
 
@@ -180,6 +180,7 @@ class MainWindow(HomeMixin, LibraryMixin, QueueMixin, QMainWindow):
         self.engine_timer.timeout.connect(self.check_engine)
         self.engine_timer.start()
         self.check_engine()
+        QTimer.singleShot(5000, self._daily_update_check)  # only if the user chose "once a day"
 
     # ---------------------------------------------------------------- wiring
 
@@ -203,6 +204,8 @@ class MainWindow(HomeMixin, LibraryMixin, QueueMixin, QMainWindow):
         b.lib_progress.connect(self.libp.set_progress)
         b.lib_scanned.connect(self._on_lib_scanned)
         b.update.connect(self._on_update)
+        b.update_progress.connect(lambda f: self.settingsp.show_update(tr("Downloading {n}…", n=f"{f:.0%}"), True))
+        b.update_ready.connect(self._on_update_ready)
         lp = self.libp
         lp.add_folder.connect(self.add_library_folder)
         lp.refresh.connect(self.refresh_library)
@@ -305,6 +308,7 @@ class MainWindow(HomeMixin, LibraryMixin, QueueMixin, QMainWindow):
         select_data(self.settingsp.parallel, s.value("parallel", 2))
         select_data(self.settingsp.glossary, str(s.value("glossary", "true")).lower() != "false")
         select_data(self.settingsp.intro, "off" if str(s.value("intro", "true")).lower() == "false" else "on")
+        select_data(self.settingsp.update_check, str(s.value("update_check", "manual")))
         select_data(self.settingsp.voices, str(s.value("voices", "true")).lower() != "false")
         select_data(self.settingsp.scene_pass, str(s.value("scene_pass", "false")).lower() == "true")
         self._show_voices()
@@ -319,6 +323,7 @@ class MainWindow(HomeMixin, LibraryMixin, QueueMixin, QMainWindow):
         s.setValue("parallel", self.settingsp.parallel.currentData())
         s.setValue("glossary", "true" if self.settingsp.glossary.currentData() else "false")
         s.setValue("intro", "false" if self.settingsp.intro.currentData() == "off" else "true")
+        s.setValue("update_check", self.settingsp.update_check.currentData())
         s.setValue("voices", "true" if self.settingsp.voices.currentData() else "false")
         s.setValue("scene_pass", "true" if self.settingsp.scene_pass.currentData() else "false")
 
@@ -914,41 +919,116 @@ class MainWindow(HomeMixin, LibraryMixin, QueueMixin, QMainWindow):
         else:
             self.settingsp.show_voices("downloading", f"{frac:.0%}")
 
-    # ---------------------------------------------------------------- updates (only when asked)
+    # ---------------------------------------------------------------- updates (when asked, or daily if chosen)
 
-    def check_updates(self) -> None:
+    def check_updates(self, quiet: bool = False) -> None:
+        """Ask GitHub for the newest release. `quiet` (the daily check): say something only if there is one."""
         bus = self.bus
+        self.settings.setValue("update_last", time.time())
 
         def work() -> None:
             try:
-                r = httpx.get("https://api.github.com/repos/FEzio78/Subloc/releases/latest", timeout=8,
-                              headers={"Accept": "application/vnd.github+json"})  # fmt: skip
-                if r.status_code == 404:  # nothing published yet
-                    bus.update.emit("", "")
-                    return
-                r.raise_for_status()
-                data = r.json()
-                bus.update.emit(str(data.get("tag_name", "")), str(data.get("html_url", "")))
-            except Exception:
-                bus.update.emit("error", "")
+                bus.update.emit(update.latest(), "", not quiet)
+            except Exception as e:
+                bus.update.emit(None, str(e) or type(e).__name__, not quiet)
 
         threading.Thread(target=work, daemon=True).start()
-        self.toast(tr("Checking for updates…"), "info", secs=2)
+        if not quiet:
+            self.toast(tr("Checking for updates…"), "info", secs=2)
 
-    def _on_update(self, tag: str, url: str) -> None:
-        if tag == "error":
-            self.toast(tr("Couldn't reach GitHub. Check the internet connection."), "warning")
+    def _daily_update_check(self) -> None:
+        if self.settingsp.update_check.currentData() != "daily":
             return
+        try:
+            last = float(str(self.settings.value("update_last", 0) or 0))
+        except ValueError:
+            last = 0.0
+        if time.time() - last > 20 * 3600:
+            self.check_updates(quiet=True)
 
-        def parts(v: str) -> tuple[int, ...]:
-            return tuple(int(n) for n in re.findall(r"\d+", v)[:3])
-
+    def _on_update(self, rel: update.Release | None, err: str, asked: bool) -> None:
+        if err:
+            if asked:
+                self.toast(tr("Couldn't reach GitHub. Check the internet connection."), "warning")
+            return
         mine = version()
-        if tag and parts(tag) > parts(mine):
-            self.toast(tr("Subloc {v} is available.", v=tag.lstrip("vV")), "ok",
-                       (tr("Download"), lambda: QDesktopServices.openUrl(QUrl(url))), secs=12)  # fmt: skip
-        else:
-            self.toast(tr("You have the latest version ({v}).", v=mine), "ok")
+        if rel is None or not update.is_newer(rel.version, mine):
+            if asked:
+                self.toast(tr("You have the latest version ({v}).", v=mine), "ok")
+            return
+        if update.app_dir() is None or not rel.installable:  # source tree, or no checked installer: the page
+            self.toast(tr("Subloc {v} is available.", v=rel.version), "ok",
+                       (tr("Download"), lambda: QDesktopServices.openUrl(QUrl(rel.page))), secs=12)  # fmt: skip
+            return
+        self.toast(tr("Subloc {v} is available.", v=rel.version), "ok",
+                   (tr("Update now"), lambda: self.start_update(rel)), secs=15)  # fmt: skip
+
+    def _busy_elsewhere(self) -> str:
+        """What would an update interrupt? '' when nothing runs (here, on the command line, or for an agent)."""
+        if self.job is not None or self.queue_job is not None:
+            return tr("Subloc is still working. Let it finish or stop it, then update.")
+        if not self.busy.held and (who := busy.holder()):
+            return tr("Another Subloc is working ({who}). Update when it's done.", who=who)
+        if update.app_dir() is not None and update.other_windows():
+            return tr("Another Subloc window is open. Close it, then update.")
+        return ""
+
+    def start_update(self, rel: update.Release) -> None:
+        if why := self._busy_elsewhere():
+            self.toast(why, "warning", secs=8)
+            return
+        box = QMessageBox(self)
+        box.setWindowTitle(tr("Update Subloc"))
+        box.setText(tr("Download Subloc {v} ({n} MB) and install it?", v=rel.version, n=round(rel.size / 1e6)))
+        box.setInformativeText(
+            tr("Subloc closes, updates and opens again. Your settings, models and projects are kept.")
+        )
+        go = box.addButton(tr("Update now"), QMessageBox.ButtonRole.AcceptRole)
+        notes = box.addButton(tr("What's new"), QMessageBox.ButtonRole.HelpRole)
+        box.addButton(tr("Later"), QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        if box.clickedButton() is notes:
+            QDesktopServices.openUrl(QUrl(rel.page))
+            return
+        if box.clickedButton() is not go:
+            return
+        bus = self.bus
+        self.update_cancel = threading.Event()
+        cancel = self.update_cancel
+        self.settingsp.show_update(tr("Downloading…"), True)
+        self.toast(tr("Downloading Subloc {v}…", v=rel.version), "info", secs=3)
+
+        def work() -> None:
+            try:
+                path = update.fetch(rel, lambda d, t: bus.update_progress.emit(d / max(t, 1)), cancel)
+                bus.update_ready.emit(str(path), "")
+            except Exception as e:
+                bus.update_ready.emit("", "stopped" if cancel.is_set() else (str(e) or type(e).__name__))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _on_update_ready(self, path: str, err: str) -> None:
+        self.settingsp.show_update()
+        if err:
+            if err != "stopped":
+                QMessageBox.warning(self, tr("Couldn't update"), err)
+            return
+        if why := self._busy_elsewhere():  # something started while it downloaded: keep the file for later
+            self.toast(why, "warning", secs=8)
+            return
+        try:
+            update.run_installer(Path(path), reopen=True)
+        except Exception as e:
+            QMessageBox.warning(self, tr("Couldn't update"), str(e) or type(e).__name__)
+            return
+        self.toast(tr("Installing the update… Subloc opens again in a moment."), "ok", secs=3)
+        QTimer.singleShot(800, self._quit_for_update)
+
+    def _quit_for_update(self) -> None:
+        """Close as usual (settings and queue saved; nothing runs, so no question), then end the process: the
+        installer replaces this program's files and must find them free."""
+        if self.close():
+            QApplication.quit()
 
     def toggle_play(self) -> None:
         j = self.jobp

@@ -17,6 +17,8 @@ subloc burn "Episode 3.mkv" --style Boxed         # a copy with the subtitles dr
 subloc library add "D:\Anime"                     # the app's library: add, refresh, list --missing, remove
 subloc queue add "D:\Anime\Night Market"          # hand videos to the app's queue (start it in the app)
 subloc status                                     # settings, translator ready?, busy?
+subloc update --check                             # is there a newer Subloc?
+subloc update                                     # download it (checked) and install it (installed app only)
 ```
 
 With the installed app the command is `subloc-cli.exe` in Subloc's folder (usually
