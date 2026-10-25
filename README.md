@@ -15,9 +15,13 @@
 
 - **يستمع ويكتب:** يحوّل الكلام إلى نص بتوقيت دقيق باستخدام Whisper على بطاقة الرسوميات.
 - **يترجم بفهم للسياق:** يترجم المشهد كاملًا لا السطر وحده، ويوحّد كتابة الأسماء في كل الحلقات، ولا يمسّ التوقيت أبدًا.
+- **يعرف من يتكلم ولمن:** يميّز المتحدث في كل سطر وهل الصوت لرجل أم لامرأة، فيُترجم «you» بالصيغة الصحيحة:
+  «هل أنت مستعد؟» لرجل، و«هل أنتي مستعدة؟» لامرأة، و«هل أنتم مستعدون؟» لمجموعة. والمؤنث بياء ظاهرة (أنتي، لكي).
+- **لا يفوته الهمس:** يستمع مرة ثانية، بصوت مرفوع، إلى الكلام الهادئ الذي لم يُكتب في المرة الأولى.
 - **يستفيد من الترجمة الموجودة:** إن كان في الملف ترجمة (إنجليزية مثلًا) يترجمها مباشرة، فيكون أسرع وبتوقيت احترافي.
 - **يتعامل مع الملفات الحقيقية:** عدة مسارات صوتية، مقاطع بلغات مختلطة، ملفات تالفة، ومجلدات مواسم كاملة.
-- **تستطيع التصحيح:** انقر أي سطر لتعديله أو إعادة ترجمته، وغيّر اسم شخصية مرة واحدة فيتغيّر في كل مكان.
+- **تستطيع التصحيح:** انقر أي سطر لتعديله أو إعادة ترجمته أو لتقول لمن يُوجَّه (رجل، امرأة، عدة أشخاص)، وغيّر اسم
+  شخصية مرة واحدة فيتغيّر في كل مكان.
 - **بالشكل الذي تريده:** أنماط للترجمة مع معاينة دقيقة، ومشغّل داخل البرنامج، وتصدير فيديو بترجمة مدمجة للهاتف والتلفاز.
 - **بواجهة عربية كاملة** من اليمين إلى اليسار، أو بالإنجليزية.
 - **من سطر الأوامر أو عبر وكيل ذكاء اصطناعي:** كل ما يفعله البرنامج متاح بالأوامر، وكخادم MCP يستطيع وكيل مثل Claude
@@ -25,13 +29,13 @@
 
 ### الخصوصية
 
-كل شيء يعمل على جهازك. لا تُرسل مقاطعك ولا أصواتها ولا ترجماتها إلى أي مكان. الاتصال الوحيد بالإنترنت هو تنزيل
-النماذج أثناء الإعداد.
+كل شيء يعمل على جهازك، ومنه التعرّف على المتحدثين وأصواتهم. لا تُرسل مقاطعك ولا أصواتها ولا ترجماتها إلى أي مكان.
+الاتصال بالإنترنت هو تنزيل النماذج أثناء الإعداد فقط، والبحث عن تحديثات عندما تطلب ذلك.
 
 ### الحالة
 
-نسخة تجريبية لنظام ويندوز. يعمل حاليًا من الشيفرة المصدرية، والمثبّت بنقرة واحدة قادم قريبًا. طريقة التشغيل والتفاصيل
-التقنية في القسم الإنجليزي أدناه.
+الإصدار 0.2.0 لنظام ويندوز: نزّل المثبّت من صفحة [الإصدارات](https://github.com/FEzio78/Subloc/releases) وشغّله.
+طريقة التشغيل من الشيفرة والتفاصيل التقنية في القسم الإنجليزي أدناه.
 
 **الرخصة:** مفتوح المصدر بموجب GPL-3.0.
 
@@ -49,19 +53,25 @@ Built first for **Arabic** viewers to watch their favorite shows, movies and ani
 they were made in — and designed so anyone can use it: subtitles can be made in any of 17 languages
 (Arabic, English, Spanish, French, German, Japanese, Korean, Chinese, Hindi, Thai and more).
 
-> **Status:** beta, Windows. Runs from source today; a one-click installer is next.
+> **Status:** version 0.2.0 for Windows: get the installer from
+> [Releases](https://github.com/FEzio78/Subloc/releases).
 
 ## What it does
 
 - **Listens and writes** — Whisper turns the speech into timed text, on your graphics card.
 - **Translates with context** — a local language model translates whole scenes, not single lines, keeps
   names spelled the same in every episode, and never touches the timing.
+- **Knows who speaks, and to whom** — each line gets its speaker and whether the voice is a man's or a
+  woman's, and the translator decides who the line is said to. So "you" comes out right in Arabic:
+  «هل أنت مستعد؟» to a man, «هل أنتي مستعدة؟» to a woman, «هل أنتم مستعدون؟» to a group (feminine with a
+  visible ي). Names learn their gender too, for the next episodes.
+- **Doesn't miss whispers** — quiet speech the first pass skipped is listened to again, louder.
 - **Uses existing subtitles** — if the file already has subtitles (say, English), it translates those
   instead: faster, with professional timing.
 - **Handles real-world files** — several audio tracks, mixed-language videos, damaged downloads (timing
   stays right, you get a warning), whole season folders.
-- **Lets you fix things** — click any line to edit it or translate it again; rename a character once and
-  every line follows.
+- **Lets you fix things** — click any line to edit it, translate it again, or say who it's spoken to (a
+  man, a woman, several people); rename a character once and every line follows.
 - **Looks the way you want** — subtitle styles with an exact preview; play inside the app, or burn the
   subtitles into a new video for phones and TVs.
 - **Speaks your language** — English and Arabic interface (full right-to-left layout).
@@ -77,13 +87,15 @@ they were made in — and designed so anyone can use it: subtitles can be made i
 ## How it works
 
 ```
-video ─► ffmpeg ─► Whisper (speech → timed lines) ─┐
-     └─► built-in subtitles (if any) ──────────────┤
+video ─► ffmpeg ─► Whisper (speech → timed lines, quiet parts heard twice) ─┐
+     └─► built-in subtitles (if any) ───────────────────────────────────────┤
+                                                                            ▼
+          speakers + man/woman voice per line (NVIDIA Nemotron, local)
+                                                                            ▼
+          name list (one spelling per name, people's genders, per series folder)
                                                    ▼
-          name list (one spelling per name, per series folder)
-                                                   ▼
-          local LLM translates numbered lines in batches, with context
-          (timestamps never leave the app; each answer is checked line by line)
+          local LLM translates numbered lines in batches, with context and who is
+          spoken to (timestamps never leave the app; each answer is checked line by line)
                                                    ▼
           Video.ar.srt  +  styled Video.ar.ass  +  optional burned-in MP4
 ```
@@ -100,7 +112,8 @@ address.
 | Balanced | NVIDIA, 6–12 GB | Whisper large-v3 | Gemma 4 E4B | ~8 GB |
 | Light | any PC | Whisper small | Gemma 4 E2B | ~4 GB |
 
-On a strong GPU an 87-minute film takes about 9 minutes. The Light setup runs on the processor: it works,
+Speakers and voices add about 0.15 GB of models (Settings → Speakers and voices). On a strong GPU an
+87-minute film takes about 9 minutes. The Light setup runs on the processor: it works,
 but a 1-hour episode can take 1–3 hours on a laptop.
 
 ## Install (Windows 10/11, 64-bit)
@@ -108,7 +121,8 @@ but a 1-hour episode can take 1–3 hours on a laptop.
 Download `Subloc-<version>-setup.exe` from [Releases](https://github.com/FEzio78/Subloc/releases) and run it.
 No admin rights are needed; the installer is in English and Arabic. On first launch Setup checks your PC,
 recommends models and downloads them (and NVIDIA's CUDA libraries if you have an NVIDIA card) into
-`%LOCALAPPDATA%\Subloc`. Uninstalling asks whether to keep those downloads.
+`%LOCALAPPDATA%\Subloc`. A newer installer updates an installed Subloc in place and keeps its settings and
+models. Uninstalling asks whether to keep those downloads.
 
 ## Run from source (Windows)
 
@@ -132,7 +146,8 @@ Everything the app does also works without the window, with the app's settings
 .venv\Scripts\python -m subloc translate "D:\Shows\Season 1"   # a whole folder, subfolders too
 .venv\Scripts\python -m subloc translate "movie.mkv" --to en
 .venv\Scripts\python -m subloc folder "D:\Shows" --missing     # what still needs subtitles
-.venv\Scripts\python -m subloc lines "movie.mkv"               # read, then: edit / retranslate / burn
+.venv\Scripts\python -m subloc lines "movie.mkv"               # read (with speakers), then: edit / retranslate / burn
+.venv\Scripts\python -m subloc retranslate "movie.mkv" 57 --to woman   # line 57 is said to a woman
 .venv\Scripts\python -m subloc --help                          # every command takes --json
 ```
 
@@ -153,9 +168,9 @@ Saved next to the video, so VLC, MPV, Plex and most TVs pick the subtitles up au
 
 ## Privacy
 
-Everything runs on your computer. Videos, audio and subtitles are never sent anywhere. The only network
-traffic is downloading models during Setup (from Hugging Face) — or talking to the translator server
-*you* configure.
+Everything runs on your computer, speaker and voice detection included. Videos, audio and subtitles are
+never sent anywhere. The only network traffic is downloading models during Setup (from Hugging Face and
+GitHub), checking for updates when you ask, or talking to the translator server *you* configure.
 
 ## Contributing
 
