@@ -63,6 +63,14 @@ All four checks must pass before committing.
   feminine "you" with a visible ي, not a kasra (أنتي، لكي، يمكنكي، كنتي: the user's choice, `langs.visible_feminine`).
 - Defaults the user chose: 2 parallel translation requests (1–4 selectable); the user picks models.
 
+## Status (2026-10-25)
+
+**v0.2.1 released** (https://github.com/FEzio78/Subloc/releases/tag/v0.2.1, tag on `1bb166b`, `main` = `dev`):
+installer `Subloc-0.2.1-setup.exe`, 159 MB, SHA-256 `3a3ce507…740915d5` (GitHub's digest matched). One change:
+the in-app updater (Next 0). Tested: update over the released 0.2.0 (in place, one uninstall entry, window opens),
+and the updater end to end. From 0.2.1 on, users update from inside the app; 0.2.0 users install 0.2.1 by hand.
+Notes: `dist/release-notes-v0.2.1.md` (git-ignored). The live check reads v0.2.1 as installable.
+
 ## Status (2026-10-24)
 
 **v0.2.0 released** (https://github.com/FEzio78/Subloc/releases/tag/v0.2.0, tag on `769dc79`, `main` = `dev`):
@@ -108,7 +116,7 @@ PATH from its first runtime hook (`installer/rth_system_path.py`): other program
 
 ## Next
 
-0. **In-app updater — done (2026-10-25), ships in 0.2.1**: `subloc/update.py` (check GitHub, download verified by
+0. **In-app updater — released in 0.2.1 (2026-10-25)**: `subloc/update.py` (check GitHub, download verified by
    GitHub's SHA-256, run the installer quietly into the app folder with `/WAITPID=<pid>` and `/REOPEN=1`), app
    (Update now, progress on the Check for updates button, refuses while anything runs or another Subloc window
    is open, optional daily check), `subloc update [--check]`. Tested end to end in %TEMP% (local feed via
